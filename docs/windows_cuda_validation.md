@@ -159,6 +159,11 @@ For benchmark JSON:
 - `summary.tpot_seconds_mean`
 - `summary.peak_memory_bytes_max`
 
+On Windows:
+
+- CPU peak memory uses the Win32 `GetProcessMemoryInfo` path.
+- CUDA peak memory still uses `torch.cuda.max_memory_allocated`.
+
 For compare demo:
 
 - pane-level support report

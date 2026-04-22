@@ -278,5 +278,6 @@ This is intended as a FlexAttention/FlexDecoding-style long-context optimization
 - Metrics are measured for batch size 1.
 - The decoding loop and metric collection are shared across backends so the benchmark comparison stays consistent.
 - Peak memory reports CUDA peak allocation on GPU and process peak RSS on CPU.
+- On Windows CPU paths, peak process memory is collected through the Win32 `GetProcessMemoryInfo` API instead of the Unix-only `resource` module.
 - `TTFT` is measured as prompt prefill plus the first generated token.
 - `TPOT` is measured over generated tokens after the first token. It is `null` if fewer than two tokens are generated.

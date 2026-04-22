@@ -274,5 +274,6 @@ python3 scripts/compare_demo.py \
 - 指标测量默认基于 batch size 1。
 - 不同 backend 共享同一套 decoding 与计时逻辑，便于做一致的 benchmark 对比。
 - `peak memory` 在 GPU 上使用 CUDA peak allocation，在 CPU 上使用进程峰值 RSS。
+- 在 Windows 的 CPU 路径下，进程峰值内存会通过 Win32 `GetProcessMemoryInfo` API 获取，而不是依赖 Unix 才有的 `resource` 模块。
 - `TTFT` 定义为 prompt prefill 加上第一个生成 token 的耗时。
 - `TPOT` 定义为第一个 token 之后各生成 token 的平均耗时；如果最终只生成了 1 个 token，则该值为 `null`。

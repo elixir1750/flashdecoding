@@ -159,6 +159,11 @@ benchmark JSON 主要看：
 - `summary.tpot_seconds_mean`
 - `summary.peak_memory_bytes_max`
 
+在 Windows 上：
+
+- CPU 峰值内存走 Win32 `GetProcessMemoryInfo` 路径。
+- CUDA 峰值内存仍然走 `torch.cuda.max_memory_allocated`。
+
 compare demo 主要看：
 
 - 每个 pane 的 support report
