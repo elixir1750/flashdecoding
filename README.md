@@ -3,6 +3,7 @@
 Minimal decoding scaffold for studying long-context generation on `EleutherAI/pythia-70m-deduped`.
 
 Chinese version: [README_zh.md](./README_zh.md)
+Windows + CUDA guide: [docs/windows_cuda_validation.md](./docs/windows_cuda_validation.md)
 
 This repository intentionally starts small:
 
@@ -215,6 +216,11 @@ What to inspect on that machine:
 - `flex_window_size` and `flex_sink_tokens` in the saved JSON metadata
 
 If `local_runtime_support=false`, treat that runtime result as the authoritative answer for that machine. Do not infer local availability from README text alone.
+
+If you want one Windows-oriented checklist that covers environment setup, baseline, benchmark, and compare, use:
+
+- [docs/windows_cuda_validation.md](./docs/windows_cuda_validation.md)
+- [scripts/windows_cuda_roundtrip.ps1](./scripts/windows_cuda_roundtrip.ps1)
 
 ## Live terminal compare
 

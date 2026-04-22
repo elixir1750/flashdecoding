@@ -3,6 +3,7 @@
 一个面向课程项目的最小 decoding 脚手架，用来研究 `EleutherAI/pythia-70m-deduped` 在长上下文场景下的生成。
 
 英文版说明见：[README.md](./README.md)
+Windows + CUDA 操作说明见：[docs/windows_cuda_validation_zh.md](./docs/windows_cuda_validation_zh.md)
 
 这个仓库刻意保持“小而清晰”：
 
@@ -211,6 +212,11 @@ python benchmarks/benchmark_decode.py ^
 - 保存下来的 JSON metadata 里的 `flex_window_size` 和 `flex_sink_tokens`
 
 如果 `local_runtime_support=false`，就应该把这次 runtime 结果视为那台机器上的真实结论，而不是根据 README 文本做推断。
+
+如果你想要一份覆盖环境安装、baseline、benchmark 和 compare 的 Windows 清单，可以直接看：
+
+- [docs/windows_cuda_validation_zh.md](./docs/windows_cuda_validation_zh.md)
+- [scripts/windows_cuda_roundtrip.ps1](./scripts/windows_cuda_roundtrip.ps1)
 
 ## 终端实时对比
 
