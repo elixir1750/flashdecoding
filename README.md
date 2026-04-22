@@ -82,6 +82,7 @@ The output JSON contains:
 - run metadata
 - aggregate summary statistics
 - per-run measurements
+- backend support information and failure reasons when an experimental backend is unavailable
 - by default the file is written to `outputs/benchmarks/benchmark_<backend>_<timestamp>.json`
 - the `outputs/` directory is ignored by Git to keep the repository clean
 
@@ -101,6 +102,12 @@ Important:
 - `flex_attention` is exposed as a separate experimental backend and is intentionally not wrapped as `flash_decode`.
 - `flex_attention_window_sink` is the first optimization path in this repo's new FlexAttention/FlexDecoding-style research direction.
 - For `flex_attention`-based backends, support is reported in three layers: `upstream_support`, `integration_support`, and `local_runtime_support`.
+
+The support layers mean:
+
+- `upstream_support`: whether the current PyTorch build exposes the needed `flex_attention` interfaces.
+- `integration_support`: whether the current `transformers` and repo loading path can theoretically request `attn_implementation="flex_attention"`.
+- `local_runtime_support`: whether a tiny runtime smoke test on the requested device actually succeeds.
 
 ## Comparison benchmark examples
 
@@ -142,6 +149,73 @@ python3 benchmarks/benchmark_decode.py \
   --warmup 1
 ```
 
+## Windows + CUDA self-validation
+
+This repository does not claim that `flex_attention` or `flex_attention_window_sink` is already verified on your target CUDA machine. The expected workflow is:
+
+1. Move the repo to your Windows + RTX 3050 + CUDA environment.
+2. Install matching `torch`, `transformers`, and any CUDA dependencies there.
+3. Run the provided commands on that machine.
+4. Use the runtime smoke-test result to decide whether the backend is locally runnable.
+
+Suggested validation order:
+
+```bash
+python scripts/generate.py ^
+  --prompt "Hello from Pythia." ^
+  --model-name EleutherAI/pythia-70m ^
+  --backend flex_attention ^
+  --device cuda ^
+  --dtype auto
+```
+
+```bash
+python scripts/generate.py ^
+  --prompt "Hello from Pythia." ^
+  --model-name EleutherAI/pythia-70m ^
+  --backend flex_attention_window_sink ^
+  --flex-window-size 256 ^
+  --flex-sink-tokens 4 ^
+  --device cuda ^
+  --dtype auto
+```
+
+```bash
+python benchmarks/benchmark_decode.py ^
+  --prompt "Hello from Pythia." ^
+  --model-name EleutherAI/pythia-70m ^
+  --backend flex_attention ^
+  --device cuda ^
+  --dtype auto ^
+  --repeat 5 ^
+  --warmup 1 ^
+  --output outputs/benchmarks/benchmark_flex_attention_cuda.json
+```
+
+```bash
+python benchmarks/benchmark_decode.py ^
+  --prompt "Hello from Pythia." ^
+  --model-name EleutherAI/pythia-70m ^
+  --backend flex_attention_window_sink ^
+  --flex-window-size 256 ^
+  --flex-sink-tokens 4 ^
+  --device cuda ^
+  --dtype auto ^
+  --repeat 5 ^
+  --warmup 1 ^
+  --output outputs/benchmarks/benchmark_flex_window_sink_cuda.json
+```
+
+What to inspect on that machine:
+
+- `backend_support_report.upstream_support`
+- `backend_support_report.integration_support`
+- `backend_support_report.local_runtime_support`
+- `backend_support_report.failure_reason`
+- `flex_window_size` and `flex_sink_tokens` in the saved JSON metadata
+
+If `local_runtime_support=false`, treat that runtime result as the authoritative answer for that machine. Do not infer local availability from README text alone.
+
 ## Live terminal compare
 
 For demos, the recommended entry point is a Rich-based side-by-side terminal view that streams two backends on the same prompt:
@@ -174,6 +248,7 @@ The demo shows:
 - backend name and model name in each pane
 - streaming generated text
 - live `elapsed`, `TTFT`, `tokens`, `tok/s`, `TPOT`, and `peak memory`
+- support-layer status for FlexAttention-style backends
 - a final summary table after both sides finish
 
 Important: this live compare mode is for visual demonstration, not rigorous measurement. Both backends run concurrently and may contend for CPU/GPU resources. Use `benchmarks/benchmark_decode.py` for cleaner timing comparisons.

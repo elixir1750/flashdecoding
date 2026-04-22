@@ -70,12 +70,15 @@ def main() -> int:
             flex_sink_tokens=args.flex_sink_tokens,
         )
     except Exception as exc:
+        support_report = getattr(exc, "support_report", None)
         if args.backend == "flash_decode":
             print("Error: flash_decode is a placeholder in this project and is not implemented.", file=sys.stderr)
             print(f"Detail: {exc}", file=sys.stderr)
         elif args.backend in {"flex_attention", "flex_attention_window_sink"}:
-            print("Error: flex_attention is an experimental backend and local runtime validation failed on the requested device.", file=sys.stderr)
-            support_report = getattr(exc, "support_report", None)
+            print(
+                "Error: the requested FlexAttention-based backend is experimental, and runtime availability must be determined by a local smoke test on the requested device.",
+                file=sys.stderr,
+            )
             if support_report is not None:
                 print(support_report.format_multiline(), file=sys.stderr)
             else:
@@ -100,8 +103,12 @@ def main() -> int:
             "backend": backend.name,
             "backend_notes": backend.notes,
             "backend_support_report": backend.support_report.to_dict() if backend.support_report is not None else None,
-            "flex_window_size": args.flex_window_size if backend.name == "flex_attention_window_sink" else None,
-            "flex_sink_tokens": args.flex_sink_tokens if backend.name == "flex_attention_window_sink" else None,
+            "requested_backend": args.backend,
+            "requested_device": args.device,
+            "requested_dtype": args.dtype,
+            "local_files_only": args.local_files_only,
+            "flex_window_size": args.flex_window_size,
+            "flex_sink_tokens": args.flex_sink_tokens,
             "device": str(device),
             "dtype": str(dtype),
         }

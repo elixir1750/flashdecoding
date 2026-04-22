@@ -1,8 +1,6 @@
 """Model and tokenizer loading helpers for backend-aware decoding."""
 
 from __future__ import annotations
-
-import types
 from typing import Any
 
 import torch

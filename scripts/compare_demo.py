@@ -101,6 +101,9 @@ def worker_main(
                 "device": str(device),
                 "dtype": str(dtype),
                 "notes": backend.notes,
+                "support_report": backend.support_report.to_dict() if backend.support_report is not None else None,
+                "flex_window_size": flex_window_size if backend.name == "flex_attention_window_sink" else None,
+                "flex_sink_tokens": flex_sink_tokens if backend.name == "flex_attention_window_sink" else None,
             }
         )
 
@@ -138,6 +141,7 @@ def worker_main(
             }
         )
     except Exception as exc:
+        support_report = getattr(exc, "support_report", None)
         event_queue.put(
             {
                 "side": side,
@@ -145,6 +149,8 @@ def worker_main(
                 "event": "error",
                 "status": "error",
                 "error": str(exc),
+                "support_report": support_report.to_dict() if support_report is not None else None,
+                "failure_reason": support_report.failure_reason if support_report is not None else str(exc),
             }
         )
 
@@ -170,6 +176,14 @@ def apply_event(state: DemoPaneState, event: dict[str, object]) -> None:
         state.peak_memory_bytes = int(event["peak_memory_bytes"])
     if "generated_text" in event:
         state.text = str(event["generated_text"])
+    if "support_report" in event:
+        state.support_report = event["support_report"]
+    if "flex_window_size" in event and event["flex_window_size"] is not None:
+        state.flex_window_size = int(event["flex_window_size"])
+    if "flex_sink_tokens" in event and event["flex_sink_tokens"] is not None:
+        state.flex_sink_tokens = int(event["flex_sink_tokens"])
+    if "failure_reason" in event:
+        state.failure_reason = str(event["failure_reason"])
     if "error" in event:
         state.error = str(event["error"])
 

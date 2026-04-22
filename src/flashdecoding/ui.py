@@ -30,6 +30,10 @@ class DemoPaneState:
     peak_memory_bytes: int | None = None
     text: str = ""
     error: str | None = None
+    failure_reason: str | None = None
+    support_report: dict[str, object] | None = None
+    flex_window_size: int | None = None
+    flex_sink_tokens: int | None = None
 
 
 def _format_seconds(value: float | None) -> str:
@@ -70,6 +74,40 @@ def _status_style(status: str) -> str:
     return "white"
 
 
+def _format_support_value(value: object | None) -> str:
+    """Format support report values for display."""
+
+    if value is None:
+        return "-"
+    return str(value)
+
+
+def render_support_report(state: DemoPaneState) -> RenderableType | None:
+    """Render support-layer status for FlexAttention-style backends."""
+
+    if state.support_report is None:
+        return None
+
+    support = Table.grid(padding=(0, 1))
+    support.add_column(style="bold")
+    support.add_column()
+    support.add_row("Upstream", _format_support_value(state.support_report.get("upstream_support")))
+    support.add_row("Integration", _format_support_value(state.support_report.get("integration_support")))
+    support.add_row("Local Runtime", _format_support_value(state.support_report.get("local_runtime_support")))
+    support.add_row("Recommended", _format_support_value(state.support_report.get("recommended_device")))
+
+    failure_reason = state.failure_reason or state.support_report.get("failure_reason")
+    details = state.support_report.get("details")
+    detail_lines = []
+    if failure_reason:
+        detail_lines.append(f"failure_reason={failure_reason}")
+    if details:
+        detail_lines.append(f"details={details}")
+
+    detail_text = Text("\n".join(detail_lines) if detail_lines else "No extra support details.", overflow="fold")
+    return Panel(Group(support, Text(""), detail_text), title="Support Report", border_style="magenta")
+
+
 def render_demo_view(prompt: str, left: DemoPaneState, right: DemoPaneState) -> RenderableType:
     """Render the live side-by-side comparison view."""
 
@@ -107,12 +145,21 @@ def render_pane(state: DemoPaneState) -> Panel:
         _format_seconds(compute_tpot_seconds(state.generated_tokens, state.elapsed_seconds, state.ttft_seconds)),
     )
     metrics.add_row("Peak Mem", _format_memory(state.peak_memory_bytes))
+    if state.flex_window_size is not None:
+        metrics.add_row("Window", str(state.flex_window_size))
+    if state.flex_sink_tokens is not None:
+        metrics.add_row("Sink Tokens", str(state.flex_sink_tokens))
 
     body = Text(state.text or "(no text yet)", overflow="fold")
     if state.error:
         body = Text(state.error, style="bold red", overflow="fold")
 
-    group = Group(metrics, Text(""), body)
+    renderables: list[RenderableType] = [metrics]
+    support_panel = render_support_report(state)
+    if support_panel is not None:
+        renderables.extend([Text(""), support_panel])
+    renderables.extend([Text(""), body])
+    group = Group(*renderables)
     title = f"{state.backend} [{state.status}]"
     return Panel(group, title=title, border_style=_status_style(state.status))
 
@@ -143,9 +190,28 @@ def render_summary(left: DemoPaneState, right: DemoPaneState) -> RenderableType:
         error_text = Text()
         if left.error:
             error_text.append(f"{left.backend}: {left.error}\n", style="bold red")
+            if left.failure_reason:
+                error_text.append(f"  failure_reason={left.failure_reason}\n", style="red")
         if right.error:
             error_text.append(f"{right.backend}: {right.error}", style="bold red")
-        return Group(table, Panel(error_text, title="Errors", border_style="red"))
+            if right.failure_reason:
+                error_text.append(f"\n  failure_reason={right.failure_reason}", style="red")
+
+        support_summary = Table(title="Support Layers", expand=True)
+        support_summary.add_column("Layer", style="bold")
+        support_summary.add_column(left.backend)
+        support_summary.add_column(right.backend)
+        for key, label in [
+            ("upstream_support", "Upstream"),
+            ("integration_support", "Integration"),
+            ("local_runtime_support", "Local Runtime"),
+            ("recommended_device", "Recommended Device"),
+        ]:
+            left_value = _format_support_value(left.support_report.get(key) if left.support_report else None)
+            right_value = _format_support_value(right.support_report.get(key) if right.support_report else None)
+            support_summary.add_row(label, left_value, right_value)
+
+        return Group(table, support_summary, Panel(error_text, title="Errors", border_style="red"))
 
     verdict_lines: list[str] = []
     left_elapsed = left.total_latency_seconds or left.elapsed_seconds

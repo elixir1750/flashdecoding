@@ -55,14 +55,17 @@ class BackendSupportReport:
     def format_multiline(self) -> str:
         """Render the support report as a readable multiline message."""
 
-        return (
-            f"{self.backend} support report: "
-            f"upstream_support={self.upstream_support}, "
-            f"integration_support={self.integration_support}, "
-            f"local_runtime_support={self.local_runtime_support}, "
-            f"recommended_device={self.recommended_device}, "
-            f"failure_reason={self.failure_reason or '-'}"
-        )
+        lines = [
+            f"{self.backend} support report:",
+            f"  upstream_support={self.upstream_support}",
+            f"  integration_support={self.integration_support}",
+            f"  local_runtime_support={self.local_runtime_support}",
+            f"  recommended_device={self.recommended_device}",
+            f"  failure_reason={self.failure_reason or '-'}",
+        ]
+        if self.details:
+            lines.append(f"  details={self.details}")
+        return "\n".join(lines)
 
 
 def _module_available(module_name: str) -> bool:
