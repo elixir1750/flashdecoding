@@ -104,6 +104,32 @@ python3 benchmarks/benchmark_decode.py \
   --warmup 1
 ```
 
+## 终端实时对比
+
+如果你想做展示效果，现在也可以直接用一个终端并排看 2 到 3 个 backend 的逐 token 生成过程：
+
+```bash
+python3 scripts/compare_live.py \
+  --prompt "Hello from Pythia." \
+  --backends vanilla sdpa \
+  --local-files-only \
+  --prompt-repeat 16 \
+  --max-new-tokens 32
+```
+
+如果你想把占位中的 `flash_decode` 也展示出来，让它明确报不支持，也可以这样跑：
+
+```bash
+python3 scripts/compare_live.py \
+  --prompt "Hello from Pythia." \
+  --backends vanilla sdpa flash_decode \
+  --local-files-only \
+  --prompt-repeat 16 \
+  --max-new-tokens 32
+```
+
+注意：这个实时对比模式主要是为了做展示，不等同于严谨 benchmark。因为多个 backend 会同时加载并竞争 CPU/GPU 资源，绝对时间可能会受影响。真正做速度对比时，还是建议使用 `benchmarks/benchmark_decode.py`。
+
 ## 当前限制
 
 - 当前仓库仅包含推理相关代码，不包含训练代码。

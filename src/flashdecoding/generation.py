@@ -1,4 +1,4 @@
-"""Single-example vanilla decoding with basic latency and memory metrics."""
+"""Single-example decoding with latency/memory metrics and streaming support."""
 
 from __future__ import annotations
 
@@ -26,21 +26,8 @@ def select_next_token(logits: torch.Tensor) -> torch.Tensor:
     return torch.argmax(logits, dim=-1, keepdim=True)
 
 
-@torch.inference_mode()
-def generate_once(
-    model: Any,
-    tokenizer: Any,
-    prompt: str,
-    device: torch.device,
-    max_new_tokens: int,
-    seed: int | None,
-) -> dict[str, Any]:
-    """Generate a single continuation with vanilla greedy decoding."""
-
-    if max_new_tokens < 1:
-        raise ValueError("max_new_tokens must be >= 1.")
-
-    _set_seed(seed)
+def _prepare_inputs(tokenizer: Any, prompt: str, device: torch.device) -> tuple[torch.Tensor, torch.Tensor]:
+    """Tokenize and move a single prompt to the target device."""
 
     encoded = tokenizer(prompt, return_tensors="pt")
     input_ids = encoded["input_ids"].to(device)
@@ -48,6 +35,26 @@ def generate_once(
 
     if input_ids.size(0) != 1:
         raise ValueError("This minimal scaffold only supports batch size 1.")
+
+    return input_ids, attention_mask
+
+
+@torch.inference_mode()
+def generate_stream(
+    model: Any,
+    tokenizer: Any,
+    prompt: str,
+    device: torch.device,
+    max_new_tokens: int,
+    seed: int | None,
+):
+    """Yield per-token decoding progress for a single continuation."""
+
+    if max_new_tokens < 1:
+        raise ValueError("max_new_tokens must be >= 1.")
+
+    _set_seed(seed)
+    input_ids, attention_mask = _prepare_inputs(tokenizer=tokenizer, prompt=prompt, device=device)
 
     reset_peak_memory(device)
     synchronize_if_needed(device)
@@ -57,16 +64,26 @@ def generate_once(
     first_logits = first_outputs.logits[0, -1, :]
     next_token = select_next_token(logits=first_logits)
     synchronize_if_needed(device)
-    ttft = time.perf_counter() - total_start
 
+    ttft = time.perf_counter() - total_start
     generated_ids = [int(next_token.item())]
+    output_ids = torch.tensor(generated_ids, dtype=input_ids.dtype, device=device).view(1, -1)
+    yield {
+        "event": "token",
+        "prompt_tokens": int(input_ids.shape[-1]),
+        "generated_tokens": len(generated_ids),
+        "generated_token_ids": list(generated_ids),
+        "generated_text": tokenizer.decode(output_ids[0], skip_special_tokens=True),
+        "ttft_seconds": ttft,
+        "elapsed_seconds": ttft,
+    }
+
     past_key_values = first_outputs.past_key_values
     current_input_ids = next_token.view(1, 1).to(device)
     current_attention_mask = torch.cat(
         [attention_mask, torch.ones((1, 1), dtype=attention_mask.dtype, device=device)],
         dim=-1,
     )
-
     eos_token_id = tokenizer.eos_token_id
 
     while len(generated_ids) < max_new_tokens:
@@ -90,10 +107,51 @@ def generate_once(
             dim=-1,
         )
 
+        synchronize_if_needed(device)
+        elapsed_seconds = time.perf_counter() - total_start
+        output_ids = torch.tensor(generated_ids, dtype=input_ids.dtype, device=device).view(1, -1)
+        yield {
+            "event": "token",
+            "prompt_tokens": int(input_ids.shape[-1]),
+            "generated_tokens": len(generated_ids),
+            "generated_token_ids": list(generated_ids),
+            "generated_text": tokenizer.decode(output_ids[0], skip_special_tokens=True),
+            "ttft_seconds": ttft,
+            "elapsed_seconds": elapsed_seconds,
+        }
+
+
+@torch.inference_mode()
+def generate_once(
+    model: Any,
+    tokenizer: Any,
+    prompt: str,
+    device: torch.device,
+    max_new_tokens: int,
+    seed: int | None,
+) -> dict[str, Any]:
+    """Generate a single continuation with greedy decoding."""
+
+    last_event: dict[str, Any] | None = None
+    for event in generate_stream(
+        model=model,
+        tokenizer=tokenizer,
+        prompt=prompt,
+        device=device,
+        max_new_tokens=max_new_tokens,
+        seed=seed,
+    ):
+        last_event = event
+
+    if last_event is None:
+        raise RuntimeError("generate_stream did not produce any tokens.")
+
+    input_ids, _attention_mask = _prepare_inputs(tokenizer=tokenizer, prompt=prompt, device=device)
     synchronize_if_needed(device)
-    total_latency = time.perf_counter() - total_start
+    total_latency = float(last_event["elapsed_seconds"])
 
     peak_memory_bytes, memory_source = get_peak_memory_bytes(device)
+    generated_ids = list(last_event["generated_token_ids"])
     output_ids = torch.tensor(generated_ids, dtype=input_ids.dtype, device=device).view(1, -1)
     full_sequence = torch.cat([input_ids, output_ids], dim=-1)
     generated_text = tokenizer.decode(output_ids[0], skip_special_tokens=True)
@@ -102,7 +160,7 @@ def generate_once(
     generated_tokens = len(generated_ids)
     tpot = None
     if generated_tokens > 1:
-        tpot = (total_latency - ttft) / (generated_tokens - 1)
+        tpot = (total_latency - float(last_event["ttft_seconds"])) / (generated_tokens - 1)
 
     return {
         "prompt": prompt,
@@ -111,7 +169,7 @@ def generate_once(
         "generated_token_ids": generated_ids,
         "generated_text": generated_text,
         "full_text": full_text,
-        "ttft_seconds": ttft,
+        "ttft_seconds": float(last_event["ttft_seconds"]),
         "tpot_seconds": tpot,
         "total_latency_seconds": total_latency,
         "peak_memory_bytes": peak_memory_bytes,

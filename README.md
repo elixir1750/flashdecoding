@@ -108,6 +108,32 @@ python3 benchmarks/benchmark_decode.py \
   --warmup 1
 ```
 
+## Live terminal compare
+
+For demos, there is also a live side-by-side terminal view that streams token progress from 2 or 3 backends at once:
+
+```bash
+python3 scripts/compare_live.py \
+  --prompt "Hello from Pythia." \
+  --backends vanilla sdpa \
+  --local-files-only \
+  --prompt-repeat 16 \
+  --max-new-tokens 32
+```
+
+You can also include the placeholder backend to show capability failure explicitly:
+
+```bash
+python3 scripts/compare_live.py \
+  --prompt "Hello from Pythia." \
+  --backends vanilla sdpa flash_decode \
+  --local-files-only \
+  --prompt-repeat 16 \
+  --max-new-tokens 32
+```
+
+Important: this live compare mode is for visual demonstration, not rigorous measurement. Multiple backends are loaded at the same time and may contend for CPU/GPU resources. Use `benchmarks/benchmark_decode.py` for cleaner timing comparisons.
+
 ## Notes and limitations
 
 - This repo is inference-only. No training code is included.
