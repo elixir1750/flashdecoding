@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Benchmark single-prompt vanilla decoding and save machine-readable metrics."""
+"""Benchmark single-prompt decoding and save machine-readable metrics."""
 
 from __future__ import annotations
 
@@ -7,6 +7,7 @@ import argparse
 import json
 import statistics
 import sys
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -21,14 +22,15 @@ from flashdecoding.model_loader import load_model_and_tokenizer
 
 
 def parse_args() -> argparse.Namespace:
-    """Parse CLI arguments for the vanilla benchmark entry point."""
+    """Parse CLI arguments for the benchmark entry point."""
 
-    parser = argparse.ArgumentParser(description="Benchmark single-prompt vanilla decoding for pythia-70m.")
+    parser = argparse.ArgumentParser(description="Benchmark single-prompt decoding for pythia-70m backends.")
     prompt_group = parser.add_mutually_exclusive_group(required=True)
     prompt_group.add_argument("--prompt", type=str, help="Inline prompt text.")
     prompt_group.add_argument("--prompt-file", type=Path, help="Path to a text file containing the prompt.")
 
     parser.add_argument("--model-name", type=str, default="EleutherAI/pythia-70m-deduped")
+    parser.add_argument("--backend", type=str, default="vanilla", choices=["vanilla", "sdpa", "flash_decode"])
     parser.add_argument("--device", type=str, default="auto", choices=["auto", "cpu", "cuda"])
     parser.add_argument("--dtype", type=str, default="auto", choices=["auto", "float32", "float16", "bfloat16"])
     parser.add_argument("--max-new-tokens", type=int, default=32)
@@ -36,7 +38,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--local-files-only", action="store_true", help="Only load local Hugging Face cache files.")
     parser.add_argument("--warmup", type=int, default=0)
     parser.add_argument("--repeat", type=int, default=3)
-    parser.add_argument("--output", type=Path, required=True, help="Write results to a JSON file.")
+    parser.add_argument(
+        "--output",
+        type=Path,
+        default=None,
+        help="Write results to a JSON file. Default: outputs/benchmarks/benchmark_<backend>_<timestamp>.json",
+    )
     return parser.parse_args()
 
 
@@ -91,14 +98,18 @@ def main() -> int:
 
     args = parse_args()
     prompt = load_prompt(args)
+    if args.output is None:
+        timestamp = datetime.now().astimezone().strftime("%Y%m%d_%H%M%S")
+        args.output = ROOT / "outputs" / "benchmarks" / f"benchmark_{args.backend}_{timestamp}.json"
     if args.output.suffix.lower() != ".json":
         print("Error: benchmark output must use a .json path.", file=sys.stderr)
         return 1
 
-    print(f"Loading tokenizer and model: {args.model_name}", flush=True)
+    print(f"Loading tokenizer and model: {args.model_name} (backend={args.backend})", flush=True)
     try:
-        model, tokenizer, device, dtype = load_model_and_tokenizer(
+        model, tokenizer, device, dtype, backend = load_model_and_tokenizer(
             model_name=args.model_name,
+            backend_name=args.backend,
             requested_device=args.device,
             requested_dtype=args.dtype,
             local_files_only=args.local_files_only,
@@ -134,8 +145,8 @@ def main() -> int:
     summary = summarize_runs(runs)
     metadata = {
         "model_name": args.model_name,
-        "backend": "vanilla",
-        "backend_notes": "Using Hugging Face eager attention for the baseline.",
+        "backend": backend.name,
+        "backend_notes": backend.notes,
         "device": str(device),
         "dtype": str(dtype),
         "prompt_tokens": runs[0]["prompt_tokens"] if runs else None,

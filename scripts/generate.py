@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Run a single vanilla generation from the command line."""
+"""Run a single generation from the command line."""
 
 from __future__ import annotations
 
@@ -19,14 +19,15 @@ from flashdecoding.model_loader import load_model_and_tokenizer
 
 
 def parse_args() -> argparse.Namespace:
-    """Parse CLI arguments for single-prompt vanilla generation."""
+    """Parse CLI arguments for single-prompt generation."""
 
-    parser = argparse.ArgumentParser(description="Single-prompt vanilla generation for pythia-70m.")
+    parser = argparse.ArgumentParser(description="Single-prompt generation for pythia-70m backends.")
     prompt_group = parser.add_mutually_exclusive_group(required=True)
     prompt_group.add_argument("--prompt", type=str, help="Inline prompt text.")
     prompt_group.add_argument("--prompt-file", type=Path, help="Path to a text file containing the prompt.")
 
     parser.add_argument("--model-name", type=str, default="EleutherAI/pythia-70m-deduped")
+    parser.add_argument("--backend", type=str, default="vanilla", choices=["vanilla", "sdpa", "flash_decode"])
     parser.add_argument("--device", type=str, default="auto", choices=["auto", "cpu", "cuda"])
     parser.add_argument("--dtype", type=str, default="auto", choices=["auto", "float32", "float16", "bfloat16"])
     parser.add_argument("--max-new-tokens", type=int, default=32)
@@ -50,10 +51,11 @@ def main() -> int:
     args = parse_args()
     prompt = load_prompt(args)
 
-    print(f"Loading tokenizer and model: {args.model_name}", flush=True)
+    print(f"Loading tokenizer and model: {args.model_name} (backend={args.backend})", flush=True)
     try:
-        model, tokenizer, device, dtype = load_model_and_tokenizer(
+        model, tokenizer, device, dtype, backend = load_model_and_tokenizer(
             model_name=args.model_name,
+            backend_name=args.backend,
             requested_device=args.device,
             requested_dtype=args.dtype,
             local_files_only=args.local_files_only,
@@ -75,8 +77,8 @@ def main() -> int:
     result.update(
         {
             "model_name": args.model_name,
-            "backend": "vanilla",
-            "backend_notes": "Using Hugging Face eager attention for the baseline.",
+            "backend": backend.name,
+            "backend_notes": backend.notes,
             "device": str(device),
             "dtype": str(dtype),
         }
