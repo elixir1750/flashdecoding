@@ -23,6 +23,8 @@ flashdecoding/
 ├── benchmarks/
 │   └── benchmark_decode.py
 ├── scripts/
+│   ├── compare_demo.py
+│   ├── compare_live.py
 │   └── generate.py
 └── src/
     └── flashdecoding/
@@ -30,7 +32,8 @@ flashdecoding/
         ├── backends.py
         ├── generation.py
         ├── metrics.py
-        └── model_loader.py
+        ├── model_loader.py
+        └── ui.py
 ```
 
 ## Setup
@@ -110,29 +113,39 @@ python3 benchmarks/benchmark_decode.py \
 
 ## Live terminal compare
 
-For demos, there is also a live side-by-side terminal view that streams token progress from 2 or 3 backends at once:
+For demos, the recommended entry point is a Rich-based side-by-side terminal view that streams two backends on the same prompt:
 
 ```bash
-python3 scripts/compare_live.py \
+python3 scripts/compare_demo.py \
   --prompt "Hello from Pythia." \
-  --backends vanilla sdpa \
+  --model-name EleutherAI/pythia-70m-deduped \
+  --left-backend vanilla \
+  --right-backend sdpa \
   --local-files-only \
-  --prompt-repeat 16 \
   --max-new-tokens 32
 ```
 
-You can also include the placeholder backend to show capability failure explicitly:
+If you want to show failure isolation explicitly, you can point one side at the placeholder backend:
 
 ```bash
-python3 scripts/compare_live.py \
+python3 scripts/compare_demo.py \
   --prompt "Hello from Pythia." \
-  --backends vanilla sdpa flash_decode \
+  --model-name EleutherAI/pythia-70m-deduped \
+  --left-backend vanilla \
+  --right-backend flash_decode \
   --local-files-only \
-  --prompt-repeat 16 \
-  --max-new-tokens 32
+  --max-new-tokens 320
 ```
 
-Important: this live compare mode is for visual demonstration, not rigorous measurement. Multiple backends are loaded at the same time and may contend for CPU/GPU resources. Use `benchmarks/benchmark_decode.py` for cleaner timing comparisons.
+The demo shows:
+
+- a left pane and a right pane instead of top/bottom stacking
+- backend name and model name in each pane
+- streaming generated text
+- live `elapsed`, `TTFT`, `tokens`, `tok/s`, `TPOT`, and `peak memory`
+- a final summary table after both sides finish
+
+Important: this live compare mode is for visual demonstration, not rigorous measurement. Both backends run concurrently and may contend for CPU/GPU resources. Use `benchmarks/benchmark_decode.py` for cleaner timing comparisons.
 
 ## Notes and limitations
 

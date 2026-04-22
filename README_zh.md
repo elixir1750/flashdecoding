@@ -23,6 +23,8 @@ flashdecoding/
 ├── benchmarks/
 │   └── benchmark_decode.py
 ├── scripts/
+│   ├── compare_demo.py
+│   ├── compare_live.py
 │   └── generate.py
 └── src/
     └── flashdecoding/
@@ -30,7 +32,8 @@ flashdecoding/
         ├── backends.py
         ├── generation.py
         ├── metrics.py
-        └── model_loader.py
+        ├── model_loader.py
+        └── ui.py
 ```
 
 ## 安装
@@ -106,29 +109,39 @@ python3 benchmarks/benchmark_decode.py \
 
 ## 终端实时对比
 
-如果你想做展示效果，现在也可以直接用一个终端并排看 2 到 3 个 backend 的逐 token 生成过程：
+如果你想做展示效果，推荐直接使用现在这版基于 Rich 的左右双栏终端对比：
 
 ```bash
-python3 scripts/compare_live.py \
+python3 scripts/compare_demo.py \
   --prompt "Hello from Pythia." \
-  --backends vanilla sdpa \
+  --model-name EleutherAI/pythia-70m-deduped \
+  --left-backend vanilla \
+  --right-backend sdpa \
   --local-files-only \
-  --prompt-repeat 16 \
   --max-new-tokens 32
 ```
 
-如果你想把占位中的 `flash_decode` 也展示出来，让它明确报不支持，也可以这样跑：
+如果你想把占位中的 `flash_decode` 也展示出来，让它在右侧明确报不支持，也可以这样跑：
 
 ```bash
-python3 scripts/compare_live.py \
+python3 scripts/compare_demo.py \
   --prompt "Hello from Pythia." \
-  --backends vanilla sdpa flash_decode \
+  --model-name EleutherAI/pythia-70m-deduped \
+  --left-backend vanilla \
+  --right-backend flash_decode \
   --local-files-only \
-  --prompt-repeat 16 \
-  --max-new-tokens 32
+  --max-new-tokens 320
 ```
 
-注意：这个实时对比模式主要是为了做展示，不等同于严谨 benchmark。因为多个 backend 会同时加载并竞争 CPU/GPU 资源，绝对时间可能会受影响。真正做速度对比时，还是建议使用 `benchmarks/benchmark_decode.py`。
+这个 demo 现在会显示：
+
+- 左右两个 pane，而不是上下堆叠
+- 每侧的 backend 名称和 model 名称
+- 流式生成文本
+- 实时的 `elapsed`、`TTFT`、`tokens`、`tok/s`、`TPOT` 和 `peak memory`
+- 双侧结束后的最终 summary
+
+注意：这个实时对比模式主要是为了做展示，不等同于严谨 benchmark。因为两个 backend 会并发运行并竞争 CPU/GPU 资源，绝对时间可能会受影响。真正做速度对比时，还是建议使用 `benchmarks/benchmark_decode.py`。
 
 ## 当前限制
 
