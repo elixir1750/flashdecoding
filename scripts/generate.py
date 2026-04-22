@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Run a single generation from the command line."""
+"""Run a single vanilla generation from the command line."""
 
 from __future__ import annotations
 
@@ -19,24 +19,18 @@ from flashdecoding.model_loader import load_model_and_tokenizer
 
 
 def parse_args() -> argparse.Namespace:
-    """Parse CLI arguments for single-prompt generation."""
+    """Parse CLI arguments for single-prompt vanilla generation."""
 
-    parser = argparse.ArgumentParser(description="Single-prompt generation for pythia-70m decoding experiments.")
+    parser = argparse.ArgumentParser(description="Single-prompt vanilla generation for pythia-70m.")
     prompt_group = parser.add_mutually_exclusive_group(required=True)
     prompt_group.add_argument("--prompt", type=str, help="Inline prompt text.")
     prompt_group.add_argument("--prompt-file", type=Path, help="Path to a text file containing the prompt.")
 
     parser.add_argument("--model-name", type=str, default="EleutherAI/pythia-70m")
-    parser.add_argument("--backend", type=str, default="vanilla", choices=["vanilla", "sdpa", "flash_decode"])
     parser.add_argument("--device", type=str, default="auto", choices=["auto", "cpu", "cuda"])
     parser.add_argument("--dtype", type=str, default="auto", choices=["auto", "float32", "float16", "bfloat16"])
     parser.add_argument("--max-new-tokens", type=int, default=32)
-    parser.add_argument("--do-sample", action="store_true", help="Enable sampling instead of greedy decoding.")
-    parser.add_argument("--temperature", type=float, default=1.0)
-    parser.add_argument("--top-k", type=int, default=0, help="0 disables top-k filtering.")
-    parser.add_argument("--top-p", type=float, default=1.0, help="1.0 disables nucleus filtering.")
     parser.add_argument("--seed", type=int, default=None)
-    parser.add_argument("--ignore-eos", action="store_true", help="Keep generating even if EOS is produced.")
     parser.add_argument("--output-json", type=Path, default=None, help="Optional path to save the result as JSON.")
     return parser.parse_args()
 
@@ -56,9 +50,8 @@ def main() -> int:
     prompt = load_prompt(args)
 
     try:
-        model, tokenizer, device, dtype, backend = load_model_and_tokenizer(
+        model, tokenizer, device, dtype = load_model_and_tokenizer(
             model_name=args.model_name,
-            backend_name=args.backend,
             requested_device=args.device,
             requested_dtype=args.dtype,
         )
@@ -72,19 +65,14 @@ def main() -> int:
         prompt=prompt,
         device=device,
         max_new_tokens=args.max_new_tokens,
-        do_sample=args.do_sample,
-        temperature=args.temperature,
-        top_k=args.top_k,
-        top_p=args.top_p,
-        stop_on_eos=not args.ignore_eos,
         seed=args.seed,
     )
 
     result.update(
         {
             "model_name": args.model_name,
-            "backend": backend.name,
-            "backend_notes": backend.notes,
+            "backend": "vanilla",
+            "backend_notes": "Using Hugging Face eager attention for the baseline.",
             "device": str(device),
             "dtype": str(dtype),
         }

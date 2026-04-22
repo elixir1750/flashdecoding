@@ -1,4 +1,4 @@
-"""Model and tokenizer loading helpers."""
+"""Model and tokenizer loading helpers for the vanilla baseline."""
 
 from __future__ import annotations
 
@@ -7,14 +7,14 @@ from typing import Any
 import torch
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
-from .backends import BackendResolution, resolve_backend
-
 
 _DTYPE_MAP = {
     "float32": torch.float32,
     "float16": torch.float16,
     "bfloat16": torch.bfloat16,
 }
+
+_VANILLA_ATTN_IMPLEMENTATION = "eager"
 
 
 def resolve_device(requested_device: str) -> torch.device:
@@ -37,26 +37,24 @@ def resolve_dtype(requested_dtype: str, device: torch.device) -> torch.dtype:
 
 def load_model_and_tokenizer(
     model_name: str,
-    backend_name: str,
     requested_device: str,
     requested_dtype: str,
-) -> tuple[Any, Any, torch.device, torch.dtype, BackendResolution]:
-    """Load tokenizer and model for single-example causal decoding."""
+) -> tuple[Any, Any, torch.device, torch.dtype]:
+    """Load tokenizer and model for stable vanilla single-example decoding."""
 
     device = resolve_device(requested_device)
     dtype = resolve_dtype(requested_dtype, device)
-    backend = resolve_backend(name=backend_name, device=device.type)
 
     tokenizer = AutoTokenizer.from_pretrained(model_name)
     if tokenizer.pad_token is None and tokenizer.eos_token is not None:
         tokenizer.pad_token = tokenizer.eos_token
 
-    model_kwargs: dict[str, Any] = {"torch_dtype": dtype}
-    if backend.hf_attn_implementation is not None:
-        model_kwargs["attn_implementation"] = backend.hf_attn_implementation
-
-    model = AutoModelForCausalLM.from_pretrained(model_name, **model_kwargs)
+    model = AutoModelForCausalLM.from_pretrained(
+        model_name,
+        torch_dtype=dtype,
+        attn_implementation=_VANILLA_ATTN_IMPLEMENTATION,
+    )
     model.to(device)
     model.eval()
 
-    return model, tokenizer, device, dtype, backend
+    return model, tokenizer, device, dtype

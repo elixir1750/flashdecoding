@@ -1,4 +1,4 @@
-"""Single-example decoding with basic latency and memory metrics."""
+"""Single-example vanilla decoding with basic latency and memory metrics."""
 
 from __future__ import annotations
 
@@ -20,52 +20,10 @@ def _set_seed(seed: int | None) -> None:
         torch.cuda.manual_seed_all(seed)
 
 
-def _apply_top_k(logits: torch.Tensor, top_k: int) -> torch.Tensor:
-    """Keep only the largest top-k logits."""
+def select_next_token(logits: torch.Tensor) -> torch.Tensor:
+    """Select the next token id with greedy decoding."""
 
-    if top_k <= 0 or top_k >= logits.numel():
-        return logits
-    threshold = torch.topk(logits, top_k).values[..., -1]
-    return torch.where(logits < threshold, torch.full_like(logits, float("-inf")), logits)
-
-
-def _apply_top_p(logits: torch.Tensor, top_p: float) -> torch.Tensor:
-    """Keep the smallest token set whose cumulative probability exceeds top-p."""
-
-    if top_p >= 1.0:
-        return logits
-    sorted_logits, sorted_indices = torch.sort(logits, descending=True)
-    sorted_probs = torch.softmax(sorted_logits, dim=-1)
-    cumulative_probs = torch.cumsum(sorted_probs, dim=-1)
-    sorted_mask = cumulative_probs > top_p
-    sorted_mask[..., 1:] = sorted_mask[..., :-1].clone()
-    sorted_mask[..., 0] = False
-    filtered_sorted_logits = sorted_logits.masked_fill(sorted_mask, float("-inf"))
-    filtered_logits = torch.full_like(logits, float("-inf"))
-    filtered_logits.scatter_(0, sorted_indices, filtered_sorted_logits)
-    return filtered_logits
-
-
-def select_next_token(
-    logits: torch.Tensor,
-    do_sample: bool,
-    temperature: float,
-    top_k: int,
-    top_p: float,
-) -> torch.Tensor:
-    """Select the next token id from the final-token logits."""
-
-    if not do_sample:
-        return torch.argmax(logits, dim=-1, keepdim=True)
-
-    if temperature <= 0:
-        raise ValueError("temperature must be > 0 when sampling is enabled.")
-
-    filtered_logits = logits / temperature
-    filtered_logits = _apply_top_k(filtered_logits, top_k)
-    filtered_logits = _apply_top_p(filtered_logits, top_p)
-    probabilities = torch.softmax(filtered_logits, dim=-1)
-    return torch.multinomial(probabilities, num_samples=1)
+    return torch.argmax(logits, dim=-1, keepdim=True)
 
 
 @torch.inference_mode()
@@ -75,14 +33,9 @@ def generate_once(
     prompt: str,
     device: torch.device,
     max_new_tokens: int,
-    do_sample: bool,
-    temperature: float,
-    top_k: int,
-    top_p: float,
-    stop_on_eos: bool,
     seed: int | None,
 ) -> dict[str, Any]:
-    """Generate a single continuation and record latency/memory metrics."""
+    """Generate a single continuation with vanilla greedy decoding."""
 
     if max_new_tokens < 1:
         raise ValueError("max_new_tokens must be >= 1.")
@@ -102,13 +55,7 @@ def generate_once(
 
     first_outputs = model(input_ids=input_ids, attention_mask=attention_mask, use_cache=True)
     first_logits = first_outputs.logits[0, -1, :]
-    next_token = select_next_token(
-        logits=first_logits,
-        do_sample=do_sample,
-        temperature=temperature,
-        top_k=top_k,
-        top_p=top_p,
-    )
+    next_token = select_next_token(logits=first_logits)
     synchronize_if_needed(device)
     ttft = time.perf_counter() - total_start
 
@@ -123,7 +70,7 @@ def generate_once(
     eos_token_id = tokenizer.eos_token_id
 
     while len(generated_ids) < max_new_tokens:
-        if stop_on_eos and eos_token_id is not None and generated_ids[-1] == eos_token_id:
+        if eos_token_id is not None and generated_ids[-1] == eos_token_id:
             break
 
         step_outputs = model(
@@ -134,13 +81,7 @@ def generate_once(
         )
         past_key_values = step_outputs.past_key_values
         step_logits = step_outputs.logits[0, -1, :]
-        next_token = select_next_token(
-            logits=step_logits,
-            do_sample=do_sample,
-            temperature=temperature,
-            top_k=top_k,
-            top_p=top_p,
-        )
+        next_token = select_next_token(logits=step_logits)
 
         generated_ids.append(int(next_token.item()))
         current_input_ids = next_token.view(1, 1).to(device)
