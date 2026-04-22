@@ -1,12 +1,12 @@
 # flashdecoding
 
-一个面向课程项目的最小 baseline 脚手架，用来研究 `EleutherAI/pythia-70m` 在长上下文场景下的 decoding。
+一个面向课程项目的最小 baseline 脚手架，用来研究 `EleutherAI/pythia-70m-deduped` 在长上下文场景下的 decoding。
 
 英文版说明见：[README.md](./README.md)
 
 这个仓库刻意保持“小而清晰”：
 
-- 使用 Hugging Face Transformers 加载 `EleutherAI/pythia-70m`
+- 使用 Hugging Face Transformers 加载 `EleutherAI/pythia-70m-deduped`
 - 提供稳定的 vanilla 单条 prompt 命令行生成
 - 记录 `TTFT`、`TPOT`、`total latency` 和 `peak memory`
 - 将 benchmark 结果保存为 JSON
@@ -45,6 +45,7 @@ pip install -r requirements.txt
 ```bash
 python3 scripts/generate.py \
   --prompt "Write a short note about long-context decoding." \
+  --model-name EleutherAI/pythia-70m-deduped \
   --max-new-tokens 32
 ```
 
@@ -61,6 +62,7 @@ benchmark 脚本会始终输出 JSON 结果。
 ```bash
 python3 benchmarks/benchmark_decode.py \
   --prompt-file README.md \
+  --model-name EleutherAI/pythia-70m-deduped \
   --max-new-tokens 32 \
   --repeat 3 \
   --warmup 1 \

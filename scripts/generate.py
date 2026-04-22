@@ -26,11 +26,12 @@ def parse_args() -> argparse.Namespace:
     prompt_group.add_argument("--prompt", type=str, help="Inline prompt text.")
     prompt_group.add_argument("--prompt-file", type=Path, help="Path to a text file containing the prompt.")
 
-    parser.add_argument("--model-name", type=str, default="EleutherAI/pythia-70m")
+    parser.add_argument("--model-name", type=str, default="EleutherAI/pythia-70m-deduped")
     parser.add_argument("--device", type=str, default="auto", choices=["auto", "cpu", "cuda"])
     parser.add_argument("--dtype", type=str, default="auto", choices=["auto", "float32", "float16", "bfloat16"])
     parser.add_argument("--max-new-tokens", type=int, default=32)
     parser.add_argument("--seed", type=int, default=None)
+    parser.add_argument("--local-files-only", action="store_true", help="Only load local Hugging Face cache files.")
     parser.add_argument("--output-json", type=Path, default=None, help="Optional path to save the result as JSON.")
     return parser.parse_args()
 
@@ -49,16 +50,19 @@ def main() -> int:
     args = parse_args()
     prompt = load_prompt(args)
 
+    print(f"Loading tokenizer and model: {args.model_name}", flush=True)
     try:
         model, tokenizer, device, dtype = load_model_and_tokenizer(
             model_name=args.model_name,
             requested_device=args.device,
             requested_dtype=args.dtype,
+            local_files_only=args.local_files_only,
         )
     except Exception as exc:
         print(f"Error: {exc}", file=sys.stderr)
         return 1
 
+    print(f"Loaded model on {device} with dtype {dtype}. Starting generation...", flush=True)
     result = generate_once(
         model=model,
         tokenizer=tokenizer,

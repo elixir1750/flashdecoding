@@ -39,20 +39,22 @@ def load_model_and_tokenizer(
     model_name: str,
     requested_device: str,
     requested_dtype: str,
+    local_files_only: bool = False,
 ) -> tuple[Any, Any, torch.device, torch.dtype]:
     """Load tokenizer and model for stable vanilla single-example decoding."""
 
     device = resolve_device(requested_device)
     dtype = resolve_dtype(requested_dtype, device)
 
-    tokenizer = AutoTokenizer.from_pretrained(model_name)
+    tokenizer = AutoTokenizer.from_pretrained(model_name, local_files_only=local_files_only)
     if tokenizer.pad_token is None and tokenizer.eos_token is not None:
         tokenizer.pad_token = tokenizer.eos_token
 
     model = AutoModelForCausalLM.from_pretrained(
         model_name,
-        torch_dtype=dtype,
+        dtype=dtype,
         attn_implementation=_VANILLA_ATTN_IMPLEMENTATION,
+        local_files_only=local_files_only,
     )
     model.to(device)
     model.eval()

@@ -1,12 +1,12 @@
 # flashdecoding
 
-Minimal baseline scaffold for studying long-context decoding on `EleutherAI/pythia-70m`.
+Minimal baseline scaffold for studying long-context decoding on `EleutherAI/pythia-70m-deduped`.
 
 Chinese version: [README_zh.md](./README_zh.md)
 
 This repository intentionally starts small:
 
-- load `EleutherAI/pythia-70m` with Hugging Face Transformers
+- load `EleutherAI/pythia-70m-deduped` with Hugging Face Transformers
 - run stable vanilla single-prompt generation from the CLI
 - measure `TTFT`, `TPOT`, `total latency`, and `peak memory`
 - save benchmark results as JSON
@@ -45,6 +45,7 @@ pip install -r requirements.txt
 ```bash
 python3 scripts/generate.py \
   --prompt "Write a short note about long-context decoding." \
+  --model-name EleutherAI/pythia-70m-deduped \
   --max-new-tokens 32
 ```
 
@@ -61,6 +62,7 @@ The benchmark script always writes machine-readable output as JSON.
 ```bash
 python3 benchmarks/benchmark_decode.py \
   --prompt-file README.md \
+  --model-name EleutherAI/pythia-70m-deduped \
   --max-new-tokens 32 \
   --repeat 3 \
   --warmup 1 \
