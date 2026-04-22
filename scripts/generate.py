@@ -38,6 +38,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--max-new-tokens", type=int, default=32)
     parser.add_argument("--flex-window-size", type=int, default=256, help="Recent-window size for flex_attention_window_sink.")
     parser.add_argument("--flex-sink-tokens", type=int, default=4, help="Number of sink/prefix tokens always visible in flex_attention_window_sink.")
+    parser.add_argument(
+        "--no-add-special-tokens",
+        action="store_true",
+        help="Do not prepend/append tokenizer special tokens when debugging prompt tokenization behavior.",
+    )
     parser.add_argument("--seed", type=int, default=None)
     parser.add_argument("--local-files-only", action="store_true", help="Only load local Hugging Face cache files.")
     parser.add_argument("--output-json", type=Path, default=None, help="Optional path to save the result as JSON.")
@@ -101,6 +106,7 @@ def main() -> int:
         device=device,
         max_new_tokens=args.max_new_tokens,
         seed=args.seed,
+        add_special_tokens=not args.no_add_special_tokens,
     )
 
     result.update(
@@ -113,6 +119,7 @@ def main() -> int:
             "requested_device": args.device,
             "requested_dtype": args.dtype,
             "local_files_only": args.local_files_only,
+            "no_add_special_tokens": args.no_add_special_tokens,
             "flex_window_size": args.flex_window_size,
             "flex_sink_tokens": args.flex_sink_tokens,
             "device": str(device),
@@ -130,7 +137,11 @@ def main() -> int:
         "device": result["device"],
         "dtype": result["dtype"],
         "prompt_tokens": result["prompt_tokens"],
+        "prompt_contains_eos_token": result["prompt_contains_eos_token"],
         "generated_tokens": result["generated_tokens"],
+        "first_generated_token_id": result["first_generated_token_id"],
+        "first_generated_token_is_eos": result["first_generated_token_is_eos"],
+        "tokenizer_eos_token_id": result["tokenizer_eos_token_id"],
         "ttft_seconds": result["ttft_seconds"],
         "tpot_seconds": result["tpot_seconds"],
         "total_latency_seconds": result["total_latency_seconds"],
@@ -147,6 +158,10 @@ def main() -> int:
     print(format_visible_text(result["generated_text"]))
     print("\n=== Generated Token IDs ===")
     print(json.dumps(result["generated_token_ids"], ensure_ascii=False))
+    print("\n=== Prompt Token IDs ===")
+    print(json.dumps(result["prompt_token_ids"], ensure_ascii=False))
+    print("\n=== First-Step Top Tokens ===")
+    print(json.dumps(result["first_step_top_tokens"], indent=2, ensure_ascii=False))
     return 0
 
 

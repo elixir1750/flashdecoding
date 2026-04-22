@@ -26,10 +26,15 @@ def select_next_token(logits: torch.Tensor) -> torch.Tensor:
     return torch.argmax(logits, dim=-1, keepdim=True)
 
 
-def _prepare_inputs(tokenizer: Any, prompt: str, device: torch.device) -> tuple[torch.Tensor, torch.Tensor]:
+def _prepare_inputs(
+    tokenizer: Any,
+    prompt: str,
+    device: torch.device,
+    add_special_tokens: bool = True,
+) -> tuple[torch.Tensor, torch.Tensor]:
     """Tokenize and move a single prompt to the target device."""
 
-    encoded = tokenizer(prompt, return_tensors="pt")
+    encoded = tokenizer(prompt, return_tensors="pt", add_special_tokens=add_special_tokens)
     input_ids = encoded["input_ids"].to(device)
     attention_mask = encoded["attention_mask"].to(device)
 
@@ -37,6 +42,24 @@ def _prepare_inputs(tokenizer: Any, prompt: str, device: torch.device) -> tuple[
         raise ValueError("This minimal scaffold only supports batch size 1.")
 
     return input_ids, attention_mask
+
+
+def summarize_top_tokens(logits: torch.Tensor, tokenizer: Any, top_k: int = 5) -> list[dict[str, Any]]:
+    """Summarize the highest-logit next-token candidates for debugging."""
+
+    top_k = max(1, min(top_k, int(logits.shape[-1])))
+    values, indices = torch.topk(logits, k=top_k)
+    summary: list[dict[str, Any]] = []
+    for value, index in zip(values.tolist(), indices.tolist()):
+        summary.append(
+            {
+                "token_id": int(index),
+                "token_piece": tokenizer.convert_ids_to_tokens(int(index)),
+                "token_text": tokenizer.decode([int(index)], skip_special_tokens=False),
+                "logit": float(value),
+            }
+        )
+    return summary
 
 
 @torch.inference_mode()
@@ -47,6 +70,7 @@ def generate_stream(
     device: torch.device,
     max_new_tokens: int,
     seed: int | None,
+    add_special_tokens: bool = True,
 ):
     """Yield per-token decoding progress for a single continuation."""
 
@@ -54,7 +78,12 @@ def generate_stream(
         raise ValueError("max_new_tokens must be >= 1.")
 
     _set_seed(seed)
-    input_ids, attention_mask = _prepare_inputs(tokenizer=tokenizer, prompt=prompt, device=device)
+    input_ids, attention_mask = _prepare_inputs(
+        tokenizer=tokenizer,
+        prompt=prompt,
+        device=device,
+        add_special_tokens=add_special_tokens,
+    )
 
     reset_peak_memory(device)
     synchronize_if_needed(device)
@@ -62,6 +91,7 @@ def generate_stream(
 
     first_outputs = model(input_ids=input_ids, attention_mask=attention_mask, use_cache=True)
     first_logits = first_outputs.logits[0, -1, :]
+    first_step_top_tokens = summarize_top_tokens(first_logits, tokenizer=tokenizer)
     next_token = select_next_token(logits=first_logits)
     synchronize_if_needed(device)
 
@@ -76,6 +106,16 @@ def generate_stream(
         "generated_text": tokenizer.decode(output_ids[0], skip_special_tokens=True),
         "ttft_seconds": ttft,
         "elapsed_seconds": ttft,
+        "first_generated_token_id": int(next_token.item()),
+        "first_generated_token_is_eos": bool(
+            tokenizer.eos_token_id is not None and int(next_token.item()) == tokenizer.eos_token_id
+        ),
+        "tokenizer_eos_token_id": tokenizer.eos_token_id,
+        "prompt_token_ids": input_ids[0].tolist(),
+        "prompt_contains_eos_token": bool(
+            tokenizer.eos_token_id is not None and tokenizer.eos_token_id in input_ids[0].tolist()
+        ),
+        "first_step_top_tokens": first_step_top_tokens,
     }
 
     past_key_values = first_outputs.past_key_values
@@ -118,6 +158,16 @@ def generate_stream(
             "generated_text": tokenizer.decode(output_ids[0], skip_special_tokens=True),
             "ttft_seconds": ttft,
             "elapsed_seconds": elapsed_seconds,
+            "first_generated_token_id": generated_ids[0],
+            "first_generated_token_is_eos": bool(
+                tokenizer.eos_token_id is not None and generated_ids[0] == tokenizer.eos_token_id
+            ),
+            "tokenizer_eos_token_id": tokenizer.eos_token_id,
+            "prompt_token_ids": input_ids[0].tolist(),
+            "prompt_contains_eos_token": bool(
+                tokenizer.eos_token_id is not None and tokenizer.eos_token_id in input_ids[0].tolist()
+            ),
+            "first_step_top_tokens": first_step_top_tokens,
         }
 
 
@@ -129,6 +179,7 @@ def generate_once(
     device: torch.device,
     max_new_tokens: int,
     seed: int | None,
+    add_special_tokens: bool = True,
 ) -> dict[str, Any]:
     """Generate a single continuation with greedy decoding."""
 
@@ -140,13 +191,19 @@ def generate_once(
         device=device,
         max_new_tokens=max_new_tokens,
         seed=seed,
+        add_special_tokens=add_special_tokens,
     ):
         last_event = event
 
     if last_event is None:
         raise RuntimeError("generate_stream did not produce any tokens.")
 
-    input_ids, _attention_mask = _prepare_inputs(tokenizer=tokenizer, prompt=prompt, device=device)
+    input_ids, _attention_mask = _prepare_inputs(
+        tokenizer=tokenizer,
+        prompt=prompt,
+        device=device,
+        add_special_tokens=add_special_tokens,
+    )
     synchronize_if_needed(device)
     total_latency = float(last_event["elapsed_seconds"])
 
@@ -165,8 +222,14 @@ def generate_once(
     return {
         "prompt": prompt,
         "prompt_tokens": int(input_ids.shape[-1]),
+        "prompt_token_ids": last_event["prompt_token_ids"],
+        "prompt_contains_eos_token": last_event["prompt_contains_eos_token"],
         "generated_tokens": generated_tokens,
         "generated_token_ids": generated_ids,
+        "first_generated_token_id": last_event["first_generated_token_id"],
+        "first_generated_token_is_eos": last_event["first_generated_token_is_eos"],
+        "tokenizer_eos_token_id": last_event["tokenizer_eos_token_id"],
+        "first_step_top_tokens": last_event["first_step_top_tokens"],
         "generated_text": generated_text,
         "full_text": full_text,
         "ttft_seconds": float(last_event["ttft_seconds"]),

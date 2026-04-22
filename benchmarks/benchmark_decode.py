@@ -41,6 +41,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--max-new-tokens", type=int, default=32)
     parser.add_argument("--flex-window-size", type=int, default=256, help="Recent-window size for flex_attention_window_sink.")
     parser.add_argument("--flex-sink-tokens", type=int, default=4, help="Number of sink/prefix tokens always visible in flex_attention_window_sink.")
+    parser.add_argument(
+        "--no-add-special-tokens",
+        action="store_true",
+        help="Do not prepend/append tokenizer special tokens when debugging prompt tokenization behavior.",
+    )
     parser.add_argument("--seed", type=int, default=None)
     parser.add_argument("--local-files-only", action="store_true", help="Only load local Hugging Face cache files.")
     parser.add_argument("--warmup", type=int, default=0)
@@ -120,6 +125,7 @@ def main() -> int:
         "max_new_tokens": args.max_new_tokens,
         "flex_window_size": args.flex_window_size,
         "flex_sink_tokens": args.flex_sink_tokens,
+        "no_add_special_tokens": args.no_add_special_tokens,
         "local_files_only": args.local_files_only,
         "seed": args.seed,
         "warmup": args.warmup,
@@ -163,6 +169,7 @@ def main() -> int:
             device=device,
             max_new_tokens=args.max_new_tokens,
             seed=args.seed,
+            add_special_tokens=not args.no_add_special_tokens,
         )
 
     runs: list[dict[str, Any]] = []
@@ -174,6 +181,7 @@ def main() -> int:
             device=device,
             max_new_tokens=args.max_new_tokens,
             seed=None if args.seed is None else args.seed + run_index,
+            add_special_tokens=not args.no_add_special_tokens,
         )
         result["run_index"] = run_index
         runs.append(result)
@@ -190,6 +198,7 @@ def main() -> int:
         "device_request": args.device,
         "dtype_request": args.dtype,
         "local_files_only": args.local_files_only,
+        "no_add_special_tokens": args.no_add_special_tokens,
         "seed": args.seed,
         "prompt_tokens": runs[0]["prompt_tokens"] if runs else None,
         "max_new_tokens": args.max_new_tokens,
