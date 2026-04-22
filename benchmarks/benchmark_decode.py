@@ -30,10 +30,17 @@ def parse_args() -> argparse.Namespace:
     prompt_group.add_argument("--prompt-file", type=Path, help="Path to a text file containing the prompt.")
 
     parser.add_argument("--model-name", type=str, default="EleutherAI/pythia-70m-deduped")
-    parser.add_argument("--backend", type=str, default="vanilla", choices=["vanilla", "sdpa", "flash_decode"])
+    parser.add_argument(
+        "--backend",
+        type=str,
+        default="vanilla",
+        choices=["vanilla", "sdpa", "flex_attention", "flex_attention_window_sink", "flash_decode"],
+    )
     parser.add_argument("--device", type=str, default="auto", choices=["auto", "cpu", "cuda"])
     parser.add_argument("--dtype", type=str, default="auto", choices=["auto", "float32", "float16", "bfloat16"])
     parser.add_argument("--max-new-tokens", type=int, default=32)
+    parser.add_argument("--flex-window-size", type=int, default=256, help="Recent-window size for flex_attention_window_sink.")
+    parser.add_argument("--flex-sink-tokens", type=int, default=4, help="Number of sink/prefix tokens always visible in flex_attention_window_sink.")
     parser.add_argument("--seed", type=int, default=None)
     parser.add_argument("--local-files-only", action="store_true", help="Only load local Hugging Face cache files.")
     parser.add_argument("--warmup", type=int, default=0)
@@ -105,6 +112,19 @@ def main() -> int:
         print("Error: benchmark output must use a .json path.", file=sys.stderr)
         return 1
 
+    metadata = {
+        "model_name": args.model_name,
+        "backend": args.backend,
+        "device_request": args.device,
+        "dtype_request": args.dtype,
+        "max_new_tokens": args.max_new_tokens,
+        "flex_window_size": args.flex_window_size if args.backend == "flex_attention_window_sink" else None,
+        "flex_sink_tokens": args.flex_sink_tokens if args.backend == "flex_attention_window_sink" else None,
+        "warmup": args.warmup,
+        "repeat": args.repeat,
+        "decoding": "greedy",
+    }
+
     print(f"Loading tokenizer and model: {args.model_name} (backend={args.backend})", flush=True)
     try:
         model, tokenizer, device, dtype, backend = load_model_and_tokenizer(
@@ -113,9 +133,22 @@ def main() -> int:
             requested_device=args.device,
             requested_dtype=args.dtype,
             local_files_only=args.local_files_only,
+            flex_window_size=args.flex_window_size,
+            flex_sink_tokens=args.flex_sink_tokens,
         )
     except Exception as exc:
+        payload = {
+            "metadata": metadata,
+            "error": {
+                "message": str(exc),
+                "backend_status": "placeholder_not_implemented" if args.backend == "flash_decode" else "unavailable",
+                "support_report": getattr(exc, "support_report", None).to_dict() if getattr(exc, "support_report", None) is not None else None,
+            },
+            "runs": [],
+        }
+        write_json(args.output, payload)
         print(f"Error: {exc}", file=sys.stderr)
+        print(f"Wrote failure result to {args.output}", file=sys.stderr)
         return 1
 
     print(f"Loaded model on {device} with dtype {dtype}. Starting benchmark...", flush=True)
@@ -147,6 +180,7 @@ def main() -> int:
         "model_name": args.model_name,
         "backend": backend.name,
         "backend_notes": backend.notes,
+        "backend_support_report": backend.support_report.to_dict() if backend.support_report is not None else None,
         "device": str(device),
         "dtype": str(dtype),
         "prompt_tokens": runs[0]["prompt_tokens"] if runs else None,

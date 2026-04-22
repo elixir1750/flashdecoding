@@ -56,9 +56,11 @@ python3 scripts/generate.py \
 
 常用参数：
 
-- `--backend {vanilla,sdpa,flash_decode}`
+- `--backend {vanilla,sdpa,flex_attention,flex_attention_window_sink,flash_decode}`
 - `--device {auto,cpu,cuda}`
 - `--dtype {auto,float32,float16,bfloat16}`
+- `--flex-window-size`
+- `--flex-sink-tokens`
 - `--seed`
 
 ## Benchmark
@@ -81,11 +83,20 @@ python3 benchmarks/benchmark_decode.py \
 
 ## Backend 状态
 
-- `vanilla`：当前可用，使用 Hugging Face eager attention
-- `sdpa`：当前可用，使用 Hugging Face `attn_implementation="sdpa"`
-- `flash_decode`：目前只是占位接口，已实现 capability check，但还没有真正接入 Flash-Decoding 风格的 backend
+| Backend | 当前状态 | 说明 |
+| --- | --- | --- |
+| `vanilla` | 稳定 | 使用 Hugging Face eager attention，作为 baseline。 |
+| `sdpa` | 已实现 | 使用 Hugging Face `attn_implementation="sdpa"`。 |
+| `flex_attention` | 实验性 | 使用 Hugging Face `attn_implementation="flex_attention"`。CUDA 仍然是性能实验的推荐设备，但项目现在不再把它硬编码成 CUDA-only，而是通过本地 runtime smoke test 判断当前 device 能否运行。它不等价于真正的 Flash-Decoding。 |
+| `flex_attention_window_sink` | 实验性优化路径 | 使用 Hugging Face `flex_attention`，再叠加 recent-window + sink-token 的 mask 优化。这是 FlexAttention/FlexDecoding 风格的 decode-friendly 优化实验，不是真正的 Flash-Decoding。最终是否可运行由当前 device 上的 smoke test 决定。 |
+| `flash_decode` | 占位 | 尚未实现。它只是为未来的 Flash-Decoding 风格 backend 预留的语义占位，不应被称为真正 Flash-Decoding。 |
 
-重要说明：`flash_decode` 当前不会静默回退；如果请求了它但当前工程不支持，CLI 会直接报出明确错误。
+重要说明：
+
+- `flash_decode` 当前不会静默回退；CLI 会明确提示它还是 placeholder，并输出更具体的 capability 检查信息。
+- `flex_attention` 是单独暴露的实验 backend，不会被包装成 `flash_decode`。
+- `flex_attention_window_sink` 是当前仓库里第一条真正进入实现阶段的 FlexAttention/FlexDecoding 风格优化实验路径。
+- 对 `flex_attention` 系后端，项目会分三层报告支持状态：`upstream_support`、`integration_support`、`local_runtime_support`。
 
 ## 对比 Benchmark 示例
 
@@ -107,6 +118,26 @@ python3 benchmarks/benchmark_decode.py \
   --warmup 1
 ```
 
+```bash
+python3 benchmarks/benchmark_decode.py \
+  --prompt "Hello from Pythia." \
+  --backend flex_attention \
+  --local-files-only \
+  --repeat 5 \
+  --warmup 1
+```
+
+```bash
+python3 benchmarks/benchmark_decode.py \
+  --prompt "Hello from Pythia." \
+  --backend flex_attention_window_sink \
+  --flex-window-size 256 \
+  --flex-sink-tokens 4 \
+  --local-files-only \
+  --repeat 5 \
+  --warmup 1
+```
+
 ## 终端实时对比
 
 如果你想做展示效果，推荐直接使用现在这版基于 Rich 的左右双栏终端对比：
@@ -118,7 +149,7 @@ python3 scripts/compare_demo.py \
   --left-backend vanilla \
   --right-backend sdpa \
   --local-files-only \
-  --max-new-tokens 32
+  --max-new-tokens 320
 ```
 
 如果你想把占位中的 `flash_decode` 也展示出来，让它在右侧明确报不支持，也可以这样跑：
@@ -142,6 +173,19 @@ python3 scripts/compare_demo.py \
 - 双侧结束后的最终 summary
 
 注意：这个实时对比模式主要是为了做展示，不等同于严谨 benchmark。因为两个 backend 会并发运行并竞争 CPU/GPU 资源，绝对时间可能会受影响。真正做速度对比时，还是建议使用 `benchmarks/benchmark_decode.py`。
+
+## FlexAttention 优化实验
+
+当前最小可行优化路径是：
+
+- `flex_attention_window_sink`
+
+它保持 `flex_attention` 作为底层 attention backend，然后叠加一个 decode-friendly mask：
+
+- 前 `sink_tokens` 个 token 永远可见
+- 其余位置只保留最近 `window_size` 的 attention window
+
+这个路径应该被描述为 FlexAttention/FlexDecoding 风格的长上下文优化实验，不是真正的 Flash-Decoding kernel。
 
 ## 当前限制
 

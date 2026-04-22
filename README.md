@@ -56,9 +56,11 @@ python3 scripts/generate.py \
 
 Useful options:
 
-- `--backend {vanilla,sdpa,flash_decode}`
+- `--backend {vanilla,sdpa,flex_attention,flex_attention_window_sink,flash_decode}`
 - `--device {auto,cpu,cuda}`
 - `--dtype {auto,float32,float16,bfloat16}`
+- `--flex-window-size`
+- `--flex-sink-tokens`
 - `--seed`
 
 ## Benchmark
@@ -85,11 +87,20 @@ The output JSON contains:
 
 ## Backend status
 
-- `vanilla`: available now through Hugging Face eager attention
-- `sdpa`: available now through Hugging Face `attn_implementation="sdpa"`
-- `flash_decode`: placeholder only for now; capability check is implemented, but no real Flash-Decoding backend is integrated yet
+| Backend | Status | Meaning |
+| --- | --- | --- |
+| `vanilla` | Stable | Uses Hugging Face eager attention for the baseline. |
+| `sdpa` | Implemented | Uses Hugging Face `attn_implementation="sdpa"`. |
+| `flex_attention` | Experimental | Uses Hugging Face `attn_implementation="flex_attention"`. CUDA is recommended for performance experiments, but the project now uses a local runtime smoke test instead of hard-coding CUDA-only support. This is not equivalent to true Flash-Decoding. |
+| `flex_attention_window_sink` | Experimental optimization | Uses Hugging Face `flex_attention` plus a recent-window and sink-token mask overlay. This is a FlexAttention/FlexDecoding-style decode-friendly optimization experiment, not true Flash-Decoding. Runtime support is validated by a smoke test on the requested device. |
+| `flash_decode` | Placeholder | Not implemented. It remains a semantic placeholder for a future Flash-Decoding-style backend and should not be described as a real Flash-Decoding implementation. |
 
-Important: `flash_decode` does not silently fall back. If you request it and the current scaffold cannot support it, the CLI exits with a clear error.
+Important:
+
+- `flash_decode` does not silently fall back. The CLI reports that it is still a placeholder and shows a concrete capability snapshot.
+- `flex_attention` is exposed as a separate experimental backend and is intentionally not wrapped as `flash_decode`.
+- `flex_attention_window_sink` is the first optimization path in this repo's new FlexAttention/FlexDecoding-style research direction.
+- For `flex_attention`-based backends, support is reported in three layers: `upstream_support`, `integration_support`, and `local_runtime_support`.
 
 ## Comparison benchmark examples
 
@@ -111,6 +122,26 @@ python3 benchmarks/benchmark_decode.py \
   --warmup 1
 ```
 
+```bash
+python3 benchmarks/benchmark_decode.py \
+  --prompt "Hello from Pythia." \
+  --backend flex_attention \
+  --local-files-only \
+  --repeat 5 \
+  --warmup 1
+```
+
+```bash
+python3 benchmarks/benchmark_decode.py \
+  --prompt "Hello from Pythia." \
+  --backend flex_attention_window_sink \
+  --flex-window-size 256 \
+  --flex-sink-tokens 4 \
+  --local-files-only \
+  --repeat 5 \
+  --warmup 1
+```
+
 ## Live terminal compare
 
 For demos, the recommended entry point is a Rich-based side-by-side terminal view that streams two backends on the same prompt:
@@ -122,7 +153,7 @@ python3 scripts/compare_demo.py \
   --left-backend vanilla \
   --right-backend sdpa \
   --local-files-only \
-  --max-new-tokens 32
+  --max-new-tokens 320
 ```
 
 If you want to show failure isolation explicitly, you can point one side at the placeholder backend:
@@ -146,6 +177,19 @@ The demo shows:
 - a final summary table after both sides finish
 
 Important: this live compare mode is for visual demonstration, not rigorous measurement. Both backends run concurrently and may contend for CPU/GPU resources. Use `benchmarks/benchmark_decode.py` for cleaner timing comparisons.
+
+## FlexAttention optimization experiment
+
+The current experimental optimization path is:
+
+- `flex_attention_window_sink`
+
+It keeps `flex_attention` as the underlying backend, then overlays a decode-friendly mask that:
+
+- always keeps the first `sink_tokens` visible
+- only keeps a recent attention window of size `window_size`
+
+This is intended as a FlexAttention/FlexDecoding-style long-context optimization experiment. It is not a true Flash-Decoding kernel and should not be described that way.
 
 ## Notes and limitations
 

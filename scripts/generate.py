@@ -27,10 +27,17 @@ def parse_args() -> argparse.Namespace:
     prompt_group.add_argument("--prompt-file", type=Path, help="Path to a text file containing the prompt.")
 
     parser.add_argument("--model-name", type=str, default="EleutherAI/pythia-70m-deduped")
-    parser.add_argument("--backend", type=str, default="vanilla", choices=["vanilla", "sdpa", "flash_decode"])
+    parser.add_argument(
+        "--backend",
+        type=str,
+        default="vanilla",
+        choices=["vanilla", "sdpa", "flex_attention", "flex_attention_window_sink", "flash_decode"],
+    )
     parser.add_argument("--device", type=str, default="auto", choices=["auto", "cpu", "cuda"])
     parser.add_argument("--dtype", type=str, default="auto", choices=["auto", "float32", "float16", "bfloat16"])
     parser.add_argument("--max-new-tokens", type=int, default=32)
+    parser.add_argument("--flex-window-size", type=int, default=256, help="Recent-window size for flex_attention_window_sink.")
+    parser.add_argument("--flex-sink-tokens", type=int, default=4, help="Number of sink/prefix tokens always visible in flex_attention_window_sink.")
     parser.add_argument("--seed", type=int, default=None)
     parser.add_argument("--local-files-only", action="store_true", help="Only load local Hugging Face cache files.")
     parser.add_argument("--output-json", type=Path, default=None, help="Optional path to save the result as JSON.")
@@ -59,9 +66,22 @@ def main() -> int:
             requested_device=args.device,
             requested_dtype=args.dtype,
             local_files_only=args.local_files_only,
+            flex_window_size=args.flex_window_size,
+            flex_sink_tokens=args.flex_sink_tokens,
         )
     except Exception as exc:
-        print(f"Error: {exc}", file=sys.stderr)
+        if args.backend == "flash_decode":
+            print("Error: flash_decode is a placeholder in this project and is not implemented.", file=sys.stderr)
+            print(f"Detail: {exc}", file=sys.stderr)
+        elif args.backend in {"flex_attention", "flex_attention_window_sink"}:
+            print("Error: flex_attention is an experimental backend and local runtime validation failed on the requested device.", file=sys.stderr)
+            support_report = getattr(exc, "support_report", None)
+            if support_report is not None:
+                print(support_report.format_multiline(), file=sys.stderr)
+            else:
+                print(f"Detail: {exc}", file=sys.stderr)
+        else:
+            print(f"Error: {exc}", file=sys.stderr)
         return 1
 
     print(f"Loaded model on {device} with dtype {dtype}. Starting generation...", flush=True)
@@ -79,6 +99,9 @@ def main() -> int:
             "model_name": args.model_name,
             "backend": backend.name,
             "backend_notes": backend.notes,
+            "backend_support_report": backend.support_report.to_dict() if backend.support_report is not None else None,
+            "flex_window_size": args.flex_window_size if backend.name == "flex_attention_window_sink" else None,
+            "flex_sink_tokens": args.flex_sink_tokens if backend.name == "flex_attention_window_sink" else None,
             "device": str(device),
             "dtype": str(dtype),
         }

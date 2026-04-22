@@ -34,11 +34,23 @@ def parse_args() -> argparse.Namespace:
     prompt_group.add_argument("--prompt-file", type=Path, help="Path to a text file containing the prompt.")
 
     parser.add_argument("--model-name", type=str, default="EleutherAI/pythia-70m")
-    parser.add_argument("--left-backend", type=str, default="vanilla", choices=["vanilla", "sdpa", "flash_decode"])
-    parser.add_argument("--right-backend", type=str, default="sdpa", choices=["vanilla", "sdpa", "flash_decode"])
+    parser.add_argument(
+        "--left-backend",
+        type=str,
+        default="vanilla",
+        choices=["vanilla", "sdpa", "flex_attention", "flex_attention_window_sink", "flash_decode"],
+    )
+    parser.add_argument(
+        "--right-backend",
+        type=str,
+        default="sdpa",
+        choices=["vanilla", "sdpa", "flex_attention", "flex_attention_window_sink", "flash_decode"],
+    )
     parser.add_argument("--device", type=str, default="auto", choices=["auto", "cpu", "cuda"])
     parser.add_argument("--dtype", type=str, default="auto", choices=["auto", "float32", "float16", "bfloat16"])
     parser.add_argument("--max-new-tokens", type=int, default=64)
+    parser.add_argument("--flex-window-size", type=int, default=256, help="Recent-window size for flex_attention_window_sink.")
+    parser.add_argument("--flex-sink-tokens", type=int, default=4, help="Number of sink/prefix tokens always visible in flex_attention_window_sink.")
     parser.add_argument("--seed", type=int, default=None)
     parser.add_argument("--local-files-only", action="store_true", help="Only load local Hugging Face cache files.")
     parser.add_argument("--refresh-interval", type=float, default=0.05, help="TUI refresh interval in seconds.")
@@ -62,6 +74,8 @@ def worker_main(
     local_files_only: bool,
     prompt: str,
     max_new_tokens: int,
+    flex_window_size: int,
+    flex_sink_tokens: int,
     seed: int | None,
     event_queue: mp.Queue,
 ) -> None:
@@ -75,6 +89,8 @@ def worker_main(
             requested_device=requested_device,
             requested_dtype=requested_dtype,
             local_files_only=local_files_only,
+            flex_window_size=flex_window_size,
+            flex_sink_tokens=flex_sink_tokens,
         )
         event_queue.put(
             {
@@ -186,6 +202,8 @@ def main() -> int:
                 args.local_files_only,
                 prompt,
                 args.max_new_tokens,
+                args.flex_window_size,
+                args.flex_sink_tokens,
                 args.seed,
                 event_queue,
             ),
@@ -201,6 +219,8 @@ def main() -> int:
                 args.local_files_only,
                 prompt,
                 args.max_new_tokens,
+                args.flex_window_size,
+                args.flex_sink_tokens,
                 None if args.seed is None else args.seed + 1,
                 event_queue,
             ),
