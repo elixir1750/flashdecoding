@@ -30,10 +30,12 @@ def resolve_device(requested_device: str) -> torch.device:
     return torch.device(requested_device)
 
 
-def resolve_dtype(requested_dtype: str, device: torch.device) -> torch.dtype:
+def resolve_dtype(requested_dtype: str, device: torch.device, backend_name: str) -> torch.dtype:
     """Resolve a CLI dtype string to a torch dtype."""
 
     if requested_dtype == "auto":
+        if device.type == "cuda" and backend_name == "vanilla":
+            return torch.float32
         return torch.float16 if device.type == "cuda" else torch.float32
     return _DTYPE_MAP[requested_dtype]
 
@@ -165,8 +167,19 @@ def load_model_and_tokenizer(
     """Load tokenizer and model for backend-aware single-example decoding."""
 
     device = resolve_device(requested_device)
-    dtype = resolve_dtype(requested_dtype, device)
     backend = resolve_backend(name=backend_name, device=device.type)
+    dtype = resolve_dtype(requested_dtype, device, backend.name)
+
+    if requested_dtype == "auto" and device.type == "cuda" and backend.name == "vanilla":
+        backend = BackendResolution(
+            name=backend.name,
+            hf_attn_implementation=backend.hf_attn_implementation,
+            notes=(
+                f"{backend.notes} Auto dtype on CUDA is promoted to float32 for the vanilla eager baseline "
+                "to reduce numerical-instability risk relative to float16 eager attention."
+            ),
+            support_report=backend.support_report,
+        )
 
     tokenizer = AutoTokenizer.from_pretrained(model_name, local_files_only=local_files_only)
     if tokenizer.pad_token is None and tokenizer.eos_token is not None:

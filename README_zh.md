@@ -64,6 +64,12 @@ python3 scripts/generate.py \
 - `--flex-sink-tokens`
 - `--seed`
 
+当前 `dtype=auto` 还有一个很小的稳定性策略：
+
+- CUDA 上的 `vanilla` 会解析成 `float32`
+- CUDA 上的 `sdpa` 和 FlexAttention 类 backend 会解析成 `float16`
+- CPU 上会解析成 `float32`
+
 ## Benchmark
 
 benchmark 脚本会始终输出 JSON 结果。

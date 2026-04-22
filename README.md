@@ -64,6 +64,12 @@ Useful options:
 - `--flex-sink-tokens`
 - `--seed`
 
+`dtype=auto` currently uses a small stability heuristic:
+
+- `vanilla` on CUDA resolves to `float32`
+- `sdpa` and the FlexAttention-style backends on CUDA resolve to `float16`
+- CPU resolves to `float32`
+
 ## Benchmark
 
 The benchmark script always writes machine-readable output as JSON.
