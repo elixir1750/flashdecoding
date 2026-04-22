@@ -52,6 +52,12 @@ def load_prompt(args: argparse.Namespace) -> str:
     return args.prompt_file.read_text(encoding="utf-8")
 
 
+def format_visible_text(text: str) -> str:
+    """Render text with escapes visible so leading whitespace is easy to inspect."""
+
+    return json.dumps(text, ensure_ascii=False)
+
+
 def main() -> int:
     """CLI entry point."""
 
@@ -130,12 +136,17 @@ def main() -> int:
         "total_latency_seconds": result["total_latency_seconds"],
         "peak_memory_bytes": result["peak_memory_bytes"],
         "peak_memory_source": result["peak_memory_source"],
+        "generated_token_ids_head": result["generated_token_ids"][:8],
     }
 
     print("=== Generation Summary ===")
     print(json.dumps(summary, indent=2, ensure_ascii=False))
-    print("\n=== Generated Text ===")
+    print("\n=== Generated Text (raw) ===")
     print(result["generated_text"])
+    print("\n=== Generated Text (visible escapes) ===")
+    print(format_visible_text(result["generated_text"]))
+    print("\n=== Generated Token IDs ===")
+    print(json.dumps(result["generated_token_ids"], ensure_ascii=False))
     return 0
 
 
