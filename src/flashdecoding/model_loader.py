@@ -8,6 +8,7 @@ from transformers import AutoModelForCausalLM, AutoTokenizer
 from transformers.models.gpt_neox import modeling_gpt_neox
 
 from .backends import BackendNotAvailableError, BackendResolution, update_support_with_runtime_result, resolve_backend
+from .flex_masks import build_window_sink_block_mask
 
 
 _DTYPE_MAP = {
@@ -51,6 +52,20 @@ def make_recent_sink_mask(window_size: int, sink_tokens: int):
     return mask_fn
 
 
+def resolve_window_sink_kv_length(
+    attention_mask: torch.Tensor | None,
+    cache_position: torch.Tensor,
+    input_embeds: torch.Tensor,
+) -> int:
+    """Infer KV length for BlockMask construction from the current decode state."""
+
+    if attention_mask is not None:
+        return int(attention_mask.shape[-1])
+    if cache_position.numel() > 0:
+        return int(cache_position[-1].item()) + 1
+    return int(input_embeds.shape[1])
+
+
 def ensure_gpt_neox_flex_mask_patch() -> None:
     """Patch GPTNeoX causal mask creation so config-driven FlexAttention overlays can be injected."""
 
@@ -74,6 +89,27 @@ def ensure_gpt_neox_flex_mask_patch() -> None:
             sink_tokens = getattr(config, "_flex_sink_tokens", None)
             if window_size is None or sink_tokens is None:
                 raise ValueError("flex_attention_window_sink requires both _flex_window_size and _flex_sink_tokens in the config.")
+            if getattr(config, "_attn_implementation", None) == "flex_attention":
+                try:
+                    block_mask = build_window_sink_block_mask(
+                        batch_size=int(input_embeds.shape[0]),
+                        query_length=int(input_embeds.shape[1]),
+                        key_length=resolve_window_sink_kv_length(
+                            attention_mask=attention_mask,
+                            cache_position=cache_position,
+                            input_embeds=input_embeds,
+                        ),
+                        device=input_embeds.device,
+                        window_size=int(window_size),
+                        sink_tokens=int(sink_tokens),
+                    )
+                    config._flex_mask_representation = "block_mask"
+                    config._flex_mask_fallback_reason = None
+                    return block_mask
+                except Exception as exc:
+                    config._flex_mask_representation = "mask_fn_fallback"
+                    config._flex_mask_fallback_reason = f"{type(exc).__name__}: {exc}"
+
             experiment_mask = make_recent_sink_mask(window_size=window_size, sink_tokens=sink_tokens)
             if and_mask_function is None:
                 and_mask_function = experiment_mask
@@ -111,6 +147,8 @@ def configure_flex_attention_experiment(model: Any, backend_name: str, flex_wind
     model.config._flex_attention_experiment = "window_sink"
     model.config._flex_window_size = int(flex_window_size)
     model.config._flex_sink_tokens = int(flex_sink_tokens)
+    model.config._flex_mask_representation = "mask_fn_fallback"
+    model.config._flex_mask_fallback_reason = None
 
 
 @torch.inference_mode()
@@ -147,10 +185,21 @@ def run_backend_smoke_test(
         backend.support_report,
         local_runtime_support=True,
     )
+    notes = backend.notes
+    if backend.name == "flex_attention_window_sink":
+        representation = getattr(model.config, "_flex_mask_representation", None)
+        fallback_reason = getattr(model.config, "_flex_mask_fallback_reason", None)
+        if representation == "block_mask":
+            notes = f"{notes} Mask representation selected during smoke test: block_mask."
+        elif representation == "mask_fn_fallback":
+            notes = f"{notes} Mask representation selected during smoke test: mask_fn_fallback."
+            if fallback_reason:
+                notes = f"{notes} BlockMask attempt failed with: {fallback_reason}"
+
     return BackendResolution(
         name=backend.name,
         hf_attn_implementation=backend.hf_attn_implementation,
-        notes=backend.notes,
+        notes=notes,
         support_report=support_report,
     )
 
