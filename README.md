@@ -4,6 +4,7 @@ Minimal decoding scaffold for studying long-context generation on `EleutherAI/py
 
 Chinese version: [README_zh.md](./README_zh.md)
 Windows + CUDA guide: [docs/windows_cuda_validation.md](./docs/windows_cuda_validation.md)
+Colab guide: [docs/colab_validation.md](./docs/colab_validation.md)
 
 This repository intentionally starts small:
 

@@ -4,6 +4,7 @@
 
 英文版说明见：[README.md](./README.md)
 Windows + CUDA 操作说明见：[docs/windows_cuda_validation_zh.md](./docs/windows_cuda_validation_zh.md)
+Colab 操作说明见：[docs/colab_validation_zh.md](./docs/colab_validation_zh.md)
 
 这个仓库刻意保持“小而清晰”：
 
