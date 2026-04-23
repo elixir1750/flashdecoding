@@ -51,6 +51,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--max-new-tokens", type=int, default=64)
     parser.add_argument("--flex-window-size", type=int, default=128, help="Recent-window size for flex_attention_window_sink.")
     parser.add_argument("--flex-sink-tokens", type=int, default=4, help="Number of sink/prefix tokens always visible in flex_attention_window_sink.")
+    parser.add_argument("--flex-block-size", type=int, default=64, help="Block granularity for BlockMask construction in flex_attention_window_sink.")
     parser.add_argument("--seed", type=int, default=None)
     parser.add_argument("--local-files-only", action="store_true", help="Only load local Hugging Face cache files.")
     parser.add_argument("--refresh-interval", type=float, default=0.05, help="TUI refresh interval in seconds.")
@@ -76,6 +77,7 @@ def worker_main(
     max_new_tokens: int,
     flex_window_size: int,
     flex_sink_tokens: int,
+    flex_block_size: int,
     seed: int | None,
     event_queue: mp.Queue,
 ) -> None:
@@ -91,6 +93,7 @@ def worker_main(
             local_files_only=local_files_only,
             flex_window_size=flex_window_size,
             flex_sink_tokens=flex_sink_tokens,
+            flex_block_size=flex_block_size,
         )
         event_queue.put(
             {
@@ -218,6 +221,7 @@ def main() -> int:
                 args.max_new_tokens,
                 args.flex_window_size,
                 args.flex_sink_tokens,
+                args.flex_block_size,
                 args.seed,
                 event_queue,
             ),
@@ -235,6 +239,7 @@ def main() -> int:
                 args.max_new_tokens,
                 args.flex_window_size,
                 args.flex_sink_tokens,
+                args.flex_block_size,
                 None if args.seed is None else args.seed + 1,
                 event_queue,
             ),

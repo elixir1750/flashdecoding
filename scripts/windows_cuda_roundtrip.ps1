@@ -8,6 +8,7 @@ param(
     [int]$Warmup = 1,
     [int]$FlexWindowSize = 128,
     [int]$FlexSinkTokens = 4,
+    [int]$FlexBlockSize = 64,
     [switch]$RunCompareDemo
 )
 
@@ -93,6 +94,7 @@ Run-Step -Title "Generate - flex_attention_window_sink" -Command @(
     "--backend", "flex_attention_window_sink",
     "--flex-window-size", "$FlexWindowSize",
     "--flex-sink-tokens", "$FlexSinkTokens",
+    "--flex-block-size", "$FlexBlockSize",
     "--device", $Device,
     "--dtype", $DType,
     "--max-new-tokens", "$MaxNewTokens"
@@ -118,6 +120,7 @@ Run-Step -Title "Benchmark - flex_attention_window_sink" -Command @(
     "--backend", "flex_attention_window_sink",
     "--flex-window-size", "$FlexWindowSize",
     "--flex-sink-tokens", "$FlexSinkTokens",
+    "--flex-block-size", "$FlexBlockSize",
     "--device", $Device,
     "--dtype", $DType,
     "--max-new-tokens", "$MaxNewTokens",

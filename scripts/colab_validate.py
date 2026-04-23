@@ -44,6 +44,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--max-new-tokens", type=int, default=64)
     parser.add_argument("--flex-window-size", type=int, default=128)
     parser.add_argument("--flex-sink-tokens", type=int, default=4)
+    parser.add_argument("--flex-block-size", type=int, default=64)
     parser.add_argument("--warmup", type=int, default=0)
     parser.add_argument("--repeat", type=int, default=3)
     parser.add_argument("--seed", type=int, default=None)
@@ -126,6 +127,7 @@ def run_backend_validation(args: argparse.Namespace, prompt: str, backend_name: 
         "add_special_tokens": not args.no_add_special_tokens,
         "flex_window_size": args.flex_window_size,
         "flex_sink_tokens": args.flex_sink_tokens,
+        "flex_block_size": args.flex_block_size,
     }
 
     print(f"[colab] loading backend={backend_name} model={args.model_name}", flush=True)
@@ -138,6 +140,7 @@ def run_backend_validation(args: argparse.Namespace, prompt: str, backend_name: 
             local_files_only=False,
             flex_window_size=args.flex_window_size,
             flex_sink_tokens=args.flex_sink_tokens,
+            flex_block_size=args.flex_block_size,
         )
     except Exception as exc:
         return {

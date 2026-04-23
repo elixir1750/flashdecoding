@@ -39,6 +39,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--flex-window-size", type=int, default=128, help="Recent-window size for flex_attention_window_sink.")
     parser.add_argument("--flex-sink-tokens", type=int, default=4, help="Number of sink/prefix tokens always visible in flex_attention_window_sink.")
     parser.add_argument(
+        "--flex-block-size",
+        type=int,
+        default=64,
+        help="Block granularity for BlockMask construction in flex_attention_window_sink.",
+    )
+    parser.add_argument(
         "--no-add-special-tokens",
         action="store_true",
         help="Do not prepend/append tokenizer special tokens when debugging prompt tokenization behavior.",
@@ -79,6 +85,7 @@ def main() -> int:
             local_files_only=args.local_files_only,
             flex_window_size=args.flex_window_size,
             flex_sink_tokens=args.flex_sink_tokens,
+            flex_block_size=args.flex_block_size,
         )
     except Exception as exc:
         support_report = getattr(exc, "support_report", None)
@@ -122,6 +129,7 @@ def main() -> int:
             "no_add_special_tokens": args.no_add_special_tokens,
             "flex_window_size": args.flex_window_size,
             "flex_sink_tokens": args.flex_sink_tokens,
+            "flex_block_size": args.flex_block_size,
             "device": str(device),
             "dtype": str(dtype),
         }

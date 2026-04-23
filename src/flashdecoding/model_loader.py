@@ -66,6 +66,20 @@ def resolve_window_sink_kv_length(
     return int(input_embeds.shape[1])
 
 
+def resolve_window_sink_block_size(window_size: int, configured_block_size: int | None) -> int:
+    """Choose a BlockMask granularity for window-sink experiments."""
+
+    if configured_block_size is not None:
+        if configured_block_size < 1:
+            raise ValueError("flex_attention_window_sink requires --flex-block-size >= 1.")
+        return int(configured_block_size)
+    if window_size <= 64:
+        return 32
+    if window_size <= 128:
+        return 64
+    return 128
+
+
 def ensure_gpt_neox_flex_mask_patch() -> None:
     """Patch GPTNeoX causal mask creation so config-driven FlexAttention overlays can be injected."""
 
@@ -87,6 +101,7 @@ def ensure_gpt_neox_flex_mask_patch() -> None:
         if experiment == "window_sink":
             window_size = getattr(config, "_flex_window_size", None)
             sink_tokens = getattr(config, "_flex_sink_tokens", None)
+            block_size = getattr(config, "_flex_block_size", None)
             if window_size is None or sink_tokens is None:
                 raise ValueError("flex_attention_window_sink requires both _flex_window_size and _flex_sink_tokens in the config.")
             if getattr(config, "_attn_implementation", None) == "flex_attention":
@@ -102,6 +117,7 @@ def ensure_gpt_neox_flex_mask_patch() -> None:
                         device=input_embeds.device,
                         window_size=int(window_size),
                         sink_tokens=int(sink_tokens),
+                        block_size=resolve_window_sink_block_size(int(window_size), block_size),
                     )
                     config._flex_mask_representation = "block_mask"
                     config._flex_mask_fallback_reason = None
@@ -133,7 +149,13 @@ def ensure_gpt_neox_flex_mask_patch() -> None:
     _GPT_NEOX_FLEX_MASK_PATCHED = True
 
 
-def configure_flex_attention_experiment(model: Any, backend_name: str, flex_window_size: int, flex_sink_tokens: int) -> None:
+def configure_flex_attention_experiment(
+    model: Any,
+    backend_name: str,
+    flex_window_size: int,
+    flex_sink_tokens: int,
+    flex_block_size: int | None,
+) -> None:
     """Attach experimental FlexAttention settings to the loaded model config."""
 
     if backend_name != "flex_attention_window_sink":
@@ -147,6 +169,11 @@ def configure_flex_attention_experiment(model: Any, backend_name: str, flex_wind
     model.config._flex_attention_experiment = "window_sink"
     model.config._flex_window_size = int(flex_window_size)
     model.config._flex_sink_tokens = int(flex_sink_tokens)
+    model.config._flex_block_size = (
+        resolve_window_sink_block_size(int(flex_window_size), flex_block_size)
+        if flex_block_size is not None or backend_name == "flex_attention_window_sink"
+        else None
+    )
     model.config._flex_mask_representation = "mask_fn_fallback"
     model.config._flex_mask_fallback_reason = None
 
@@ -160,6 +187,7 @@ def get_flex_experiment_metadata(model: Any) -> dict[str, Any]:
         "flex_mask_fallback_reason": getattr(model.config, "_flex_mask_fallback_reason", None),
         "flex_window_size": getattr(model.config, "_flex_window_size", None),
         "flex_sink_tokens": getattr(model.config, "_flex_sink_tokens", None),
+        "flex_block_size": getattr(model.config, "_flex_block_size", None),
         "flex_block_mask_cache_stats": get_window_sink_block_mask_cache_stats(),
     }
 
@@ -225,6 +253,7 @@ def load_model_and_tokenizer(
     local_files_only: bool = False,
     flex_window_size: int = 128,
     flex_sink_tokens: int = 4,
+    flex_block_size: int | None = 64,
 ) -> tuple[Any, Any, torch.device, torch.dtype, BackendResolution]:
     """Load tokenizer and model for backend-aware single-example decoding."""
 
@@ -262,6 +291,7 @@ def load_model_and_tokenizer(
         backend_name=backend.name,
         flex_window_size=flex_window_size,
         flex_sink_tokens=flex_sink_tokens,
+        flex_block_size=flex_block_size,
     )
     backend = run_backend_smoke_test(
         model=model,

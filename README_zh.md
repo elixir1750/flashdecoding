@@ -129,6 +129,21 @@ python3 benchmarks/benchmark_decode.py \
   --warmup 1
 ```
 
+如果你想专门扫 `flex_attention_window_sink` 的稀疏参数，也可以直接用：
+
+```bash
+python3 benchmarks/sweep_window_sink.py \
+  --prompt "Hello from Pythia." \
+  --model-name EleutherAI/pythia-70m \
+  --device cuda \
+  --dtype auto \
+  --max-new-tokens 320 \
+  --window-sizes 64 96 128 160 256 \
+  --block-sizes 32 64 128 \
+  --repeat 3 \
+  --warmup 1
+```
+
 ```bash
 python3 benchmarks/benchmark_decode.py \
   --prompt "Hello from Pythia." \

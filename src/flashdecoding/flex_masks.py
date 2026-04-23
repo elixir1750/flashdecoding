@@ -13,7 +13,7 @@ except ImportError:  # pragma: no cover - depends on torch build
     create_block_mask = None
 
 
-_WINDOW_SINK_BLOCK_MASK_CACHE: dict[tuple[object, int, int, int, int, int], "BlockMask"] = {}
+_WINDOW_SINK_BLOCK_MASK_CACHE: dict[tuple[object, int, int, int, int, int, int], "BlockMask"] = {}
 _WINDOW_SINK_BLOCK_MASK_CACHE_HITS = 0
 _WINDOW_SINK_BLOCK_MASK_CACHE_MISSES = 0
 
@@ -46,6 +46,7 @@ def build_window_sink_block_mask(
     device: torch.device,
     window_size: int,
     sink_tokens: int,
+    block_size: int,
 ) -> "BlockMask":
     """Build a BlockMask for recent-window plus sink-token attention."""
 
@@ -63,6 +64,7 @@ def build_window_sink_block_mask(
         int(key_length),
         int(window_size),
         int(sink_tokens),
+        int(block_size),
     )
     cached = _WINDOW_SINK_BLOCK_MASK_CACHE.get(cache_key)
     if cached is not None:
@@ -77,6 +79,7 @@ def build_window_sink_block_mask(
         Q_LEN=query_length,
         KV_LEN=key_length,
         device=device,
+        BLOCK_SIZE=int(block_size),
         _compile=False,
     )
     _WINDOW_SINK_BLOCK_MASK_CACHE[cache_key] = block_mask
