@@ -93,6 +93,12 @@ def resolve_window_sink_mask_path(model: Any) -> str | None:
     return getattr(model.config, "_flex_block_mask_path", None)
 
 
+def resolve_window_sink_phase_policy(model: Any) -> str | None:
+    """Return the configured phase policy for the window-sink experiment."""
+
+    return getattr(model.config, "_flex_phase_policy", None)
+
+
 def ensure_gpt_neox_flex_mask_patch() -> None:
     """Patch GPTNeoX causal mask creation so config-driven FlexAttention overlays can be injected."""
 
@@ -115,13 +121,18 @@ def ensure_gpt_neox_flex_mask_patch() -> None:
             window_size = getattr(config, "_flex_window_size", None)
             sink_tokens = getattr(config, "_flex_sink_tokens", None)
             block_size = getattr(config, "_flex_block_size", None)
+            query_length = int(input_embeds.shape[1])
             if window_size is None or sink_tokens is None:
                 raise ValueError("flex_attention_window_sink requires both _flex_window_size and _flex_sink_tokens in the config.")
-            if getattr(config, "_attn_implementation", None) == "flex_attention":
+            if query_length > 1:
+                config._flex_mask_representation = "prefill_dense"
+                config._flex_block_mask_path = None
+                config._flex_mask_fallback_reason = None
+            elif getattr(config, "_attn_implementation", None) == "flex_attention":
                 try:
                     block_mask = build_window_sink_block_mask(
                         batch_size=int(input_embeds.shape[0]),
-                        query_length=int(input_embeds.shape[1]),
+                        query_length=query_length,
                         key_length=resolve_window_sink_kv_length(
                             attention_mask=attention_mask,
                             cache_position=cache_position,
@@ -141,13 +152,14 @@ def ensure_gpt_neox_flex_mask_patch() -> None:
                     config._flex_block_mask_path = None
                     config._flex_mask_fallback_reason = f"{type(exc).__name__}: {exc}"
 
-            experiment_mask = make_recent_sink_mask(window_size=window_size, sink_tokens=sink_tokens)
-            if and_mask_function is None:
-                and_mask_function = experiment_mask
-            else:
-                from transformers.masking_utils import and_masks
+            if query_length == 1:
+                experiment_mask = make_recent_sink_mask(window_size=window_size, sink_tokens=sink_tokens)
+                if and_mask_function is None:
+                    and_mask_function = experiment_mask
+                else:
+                    from transformers.masking_utils import and_masks
 
-                and_mask_function = and_masks(and_mask_function, experiment_mask)
+                    and_mask_function = and_masks(and_mask_function, experiment_mask)
 
         return _ORIGINAL_GPT_NEOX_CREATE_CAUSAL_MASK(
             config=config,
@@ -189,6 +201,7 @@ def configure_flex_attention_experiment(
         if flex_block_size is not None or backend_name == "flex_attention_window_sink"
         else None
     )
+    model.config._flex_phase_policy = "prefill_dense_decode_sparse"
     model.config._flex_mask_representation = "mask_fn_fallback"
     model.config._flex_block_mask_path = None
     model.config._flex_mask_fallback_reason = None
@@ -199,6 +212,7 @@ def get_flex_experiment_metadata(model: Any) -> dict[str, Any]:
 
     return {
         "flex_attention_experiment": getattr(model.config, "_flex_attention_experiment", None),
+        "flex_phase_policy": resolve_window_sink_phase_policy(model),
         "flex_mask_representation": getattr(model.config, "_flex_mask_representation", None),
         "flex_block_mask_path": resolve_window_sink_mask_path(model),
         "flex_mask_fallback_reason": getattr(model.config, "_flex_mask_fallback_reason", None),
