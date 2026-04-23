@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import time
 from typing import Callable
 
 import torch
@@ -19,6 +20,10 @@ _WINDOW_SINK_BLOCK_MASK_CACHE_HITS = 0
 _WINDOW_SINK_BLOCK_MASK_CACHE_MISSES = 0
 _WINDOW_SINK_BLOCK_LAYOUT_CACHE_HITS = 0
 _WINDOW_SINK_BLOCK_LAYOUT_CACHE_MISSES = 0
+_WINDOW_SINK_BLOCK_MASK_CACHE_LOOKUP_SECONDS = 0.0
+_WINDOW_SINK_BLOCK_LAYOUT_CACHE_LOOKUP_SECONDS = 0.0
+_WINDOW_SINK_BLOCK_LAYOUT_BUILD_SECONDS = 0.0
+_WINDOW_SINK_BLOCK_MASK_BUILD_SECONDS = 0.0
 
 
 def _device_cache_key(device: torch.device) -> object:
@@ -69,6 +74,7 @@ def build_window_sink_block_layout(
     """Build cached KV block tables for recent-window plus sink-token sparsity."""
 
     global _WINDOW_SINK_BLOCK_LAYOUT_CACHE_HITS, _WINDOW_SINK_BLOCK_LAYOUT_CACHE_MISSES
+    global _WINDOW_SINK_BLOCK_LAYOUT_CACHE_LOOKUP_SECONDS, _WINDOW_SINK_BLOCK_LAYOUT_BUILD_SECONDS
 
     num_q_blocks = bucket_num_blocks(query_length, q_block_size)
     num_kv_blocks = bucket_num_blocks(key_length, kv_block_size)
@@ -83,11 +89,14 @@ def build_window_sink_block_layout(
         int(q_block_size),
         int(kv_block_size),
     )
+    cache_lookup_started_at = time.perf_counter()
     cached = _WINDOW_SINK_BLOCK_LAYOUT_CACHE.get(layout_key)
+    _WINDOW_SINK_BLOCK_LAYOUT_CACHE_LOOKUP_SECONDS += time.perf_counter() - cache_lookup_started_at
     if cached is not None:
         _WINDOW_SINK_BLOCK_LAYOUT_CACHE_HITS += 1
         return cached
 
+    build_started_at = time.perf_counter()
     sink_block_count = 0 if sink_tokens <= 0 else bucket_num_blocks(sink_tokens, kv_block_size)
     row_blocks: list[list[int]] = []
     max_blocks_per_row = 1
@@ -118,6 +127,7 @@ def build_window_sink_block_layout(
 
     _WINDOW_SINK_BLOCK_LAYOUT_CACHE[layout_key] = (kv_num_blocks, kv_indices)
     _WINDOW_SINK_BLOCK_LAYOUT_CACHE_MISSES += 1
+    _WINDOW_SINK_BLOCK_LAYOUT_BUILD_SECONDS += time.perf_counter() - build_started_at
     return kv_num_blocks, kv_indices
 
 
@@ -137,6 +147,7 @@ def build_window_sink_block_mask(
     """
 
     global _WINDOW_SINK_BLOCK_MASK_CACHE_HITS, _WINDOW_SINK_BLOCK_MASK_CACHE_MISSES
+    global _WINDOW_SINK_BLOCK_MASK_CACHE_LOOKUP_SECONDS, _WINDOW_SINK_BLOCK_MASK_BUILD_SECONDS
 
     if BlockMask is None:
         raise RuntimeError("torch.nn.attention.flex_attention.BlockMask is unavailable in the current PyTorch build.")
@@ -162,7 +173,9 @@ def build_window_sink_block_mask(
         int(query_num_blocks),
         int(key_num_blocks),
     )
+    cache_lookup_started_at = time.perf_counter()
     cached = _WINDOW_SINK_BLOCK_MASK_CACHE.get(exact_mask_key)
+    _WINDOW_SINK_BLOCK_MASK_CACHE_LOOKUP_SECONDS += time.perf_counter() - cache_lookup_started_at
     if cached is not None:
         _WINDOW_SINK_BLOCK_MASK_CACHE_HITS += 1
         return cached
@@ -178,6 +191,7 @@ def build_window_sink_block_mask(
         kv_block_size=int(kv_block_size),
     )
     mask_mod = make_recent_sink_mask_mod(window_size=window_size, sink_tokens=sink_tokens)
+    build_started_at = time.perf_counter()
     block_mask = BlockMask.from_kv_blocks(
         kv_num_blocks=kv_num_blocks,
         kv_indices=kv_indices,
@@ -185,6 +199,7 @@ def build_window_sink_block_mask(
         mask_mod=mask_mod,
         seq_lengths=(int(query_length), int(key_length)),
     )
+    _WINDOW_SINK_BLOCK_MASK_BUILD_SECONDS += time.perf_counter() - build_started_at
     _WINDOW_SINK_BLOCK_MASK_CACHE[exact_mask_key] = block_mask
     _WINDOW_SINK_BLOCK_MASK_CACHE_MISSES += 1
     return block_mask
@@ -200,4 +215,15 @@ def get_window_sink_block_mask_cache_stats() -> dict[str, int]:
         "layout_entries": len(_WINDOW_SINK_BLOCK_LAYOUT_CACHE),
         "layout_hits": _WINDOW_SINK_BLOCK_LAYOUT_CACHE_HITS,
         "layout_misses": _WINDOW_SINK_BLOCK_LAYOUT_CACHE_MISSES,
+    }
+
+
+def get_window_sink_block_mask_perf_stats() -> dict[str, float]:
+    """Return cumulative timing counters for BlockMask construction internals."""
+
+    return {
+        "mask_cache_lookup_seconds": _WINDOW_SINK_BLOCK_MASK_CACHE_LOOKUP_SECONDS,
+        "layout_cache_lookup_seconds": _WINDOW_SINK_BLOCK_LAYOUT_CACHE_LOOKUP_SECONDS,
+        "layout_build_seconds": _WINDOW_SINK_BLOCK_LAYOUT_BUILD_SECONDS,
+        "block_mask_build_seconds": _WINDOW_SINK_BLOCK_MASK_BUILD_SECONDS,
     }

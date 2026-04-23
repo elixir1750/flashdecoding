@@ -8,7 +8,11 @@ from transformers import AutoModelForCausalLM, AutoTokenizer
 from transformers.models.gpt_neox import modeling_gpt_neox
 
 from .backends import BackendNotAvailableError, BackendResolution, update_support_with_runtime_result, resolve_backend
-from .flex_masks import build_window_sink_block_mask, get_window_sink_block_mask_cache_stats
+from .flex_masks import (
+    build_window_sink_block_mask,
+    get_window_sink_block_mask_cache_stats,
+    get_window_sink_block_mask_perf_stats,
+)
 
 
 _DTYPE_MAP = {
@@ -202,6 +206,7 @@ def get_flex_experiment_metadata(model: Any) -> dict[str, Any]:
         "flex_sink_tokens": getattr(model.config, "_flex_sink_tokens", None),
         "flex_block_size": getattr(model.config, "_flex_block_size", None),
         "flex_block_mask_cache_stats": get_window_sink_block_mask_cache_stats(),
+        "flex_block_mask_perf_stats": get_window_sink_block_mask_perf_stats(),
     }
 
 
