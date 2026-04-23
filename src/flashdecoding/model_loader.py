@@ -80,6 +80,15 @@ def resolve_window_sink_block_size(window_size: int, configured_block_size: int 
     return 128
 
 
+def resolve_window_sink_mask_path(model: Any) -> str | None:
+    """Return the mask construction path selected for the current model."""
+
+    representation = getattr(model.config, "_flex_mask_representation", None)
+    if representation != "block_mask":
+        return None
+    return getattr(model.config, "_flex_block_mask_path", None)
+
+
 def ensure_gpt_neox_flex_mask_patch() -> None:
     """Patch GPTNeoX causal mask creation so config-driven FlexAttention overlays can be injected."""
 
@@ -120,10 +129,12 @@ def ensure_gpt_neox_flex_mask_patch() -> None:
                         block_size=resolve_window_sink_block_size(int(window_size), block_size),
                     )
                     config._flex_mask_representation = "block_mask"
+                    config._flex_block_mask_path = "from_kv_blocks"
                     config._flex_mask_fallback_reason = None
                     return block_mask
                 except Exception as exc:
                     config._flex_mask_representation = "mask_fn_fallback"
+                    config._flex_block_mask_path = None
                     config._flex_mask_fallback_reason = f"{type(exc).__name__}: {exc}"
 
             experiment_mask = make_recent_sink_mask(window_size=window_size, sink_tokens=sink_tokens)
@@ -175,6 +186,7 @@ def configure_flex_attention_experiment(
         else None
     )
     model.config._flex_mask_representation = "mask_fn_fallback"
+    model.config._flex_block_mask_path = None
     model.config._flex_mask_fallback_reason = None
 
 
@@ -184,6 +196,7 @@ def get_flex_experiment_metadata(model: Any) -> dict[str, Any]:
     return {
         "flex_attention_experiment": getattr(model.config, "_flex_attention_experiment", None),
         "flex_mask_representation": getattr(model.config, "_flex_mask_representation", None),
+        "flex_block_mask_path": resolve_window_sink_mask_path(model),
         "flex_mask_fallback_reason": getattr(model.config, "_flex_mask_fallback_reason", None),
         "flex_window_size": getattr(model.config, "_flex_window_size", None),
         "flex_sink_tokens": getattr(model.config, "_flex_sink_tokens", None),
@@ -229,9 +242,12 @@ def run_backend_smoke_test(
     notes = backend.notes
     if backend.name == "flex_attention_window_sink":
         representation = getattr(model.config, "_flex_mask_representation", None)
+        block_mask_path = resolve_window_sink_mask_path(model)
         fallback_reason = getattr(model.config, "_flex_mask_fallback_reason", None)
         if representation == "block_mask":
             notes = f"{notes} Mask representation selected during smoke test: block_mask."
+            if block_mask_path is not None:
+                notes = f"{notes} BlockMask path: {block_mask_path}."
         elif representation == "mask_fn_fallback":
             notes = f"{notes} Mask representation selected during smoke test: mask_fn_fallback."
             if fallback_reason:
