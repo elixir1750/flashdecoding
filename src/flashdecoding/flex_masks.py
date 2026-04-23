@@ -15,7 +15,10 @@ except ImportError:  # pragma: no cover - depends on torch build
 
 _WINDOW_SINK_BACKEND_KEY = "flex_attention_window_sink"
 _WINDOW_SINK_BLOCK_MASK_CACHE: dict[tuple[object, ...], "BlockMask"] = {}
-_WINDOW_SINK_BLOCK_LAYOUT_CACHE: dict[tuple[object, ...], tuple["BlockMask", torch.Tensor, torch.Tensor]] = {}
+_WINDOW_SINK_BLOCK_LAYOUT_CACHE: dict[
+    tuple[object, ...],
+    tuple["BlockMask", torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor],
+] = {}
 _WINDOW_SINK_BLOCK_MASK_CACHE_HITS = 0
 _WINDOW_SINK_BLOCK_MASK_CACHE_MISSES = 0
 _WINDOW_SINK_BLOCK_LAYOUT_CACHE_HITS = 0
@@ -71,7 +74,7 @@ def build_window_sink_block_layout(
     sink_tokens: int,
     q_block_size: int,
     kv_block_size: int,
-) -> tuple["BlockMask", torch.Tensor, torch.Tensor]:
+) -> tuple["BlockMask", torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
     """Build cached BlockMask layout state for recent-window plus sink-token sparsity."""
 
     global _WINDOW_SINK_BLOCK_LAYOUT_CACHE_HITS, _WINDOW_SINK_BLOCK_LAYOUT_CACHE_MISSES
@@ -103,7 +106,9 @@ def build_window_sink_block_layout(
     build_started_at = time.perf_counter()
     sink_block_count = 0 if sink_tokens <= 0 else bucket_num_blocks(sink_tokens, kv_block_size)
     row_blocks: list[list[int]] = []
+    full_row_blocks: list[list[int]] = []
     max_blocks_per_row = 1
+    max_full_blocks_per_row = 1
 
     for q_block_idx in range(num_q_blocks):
         q_start = q_block_idx * q_block_size
@@ -118,22 +123,41 @@ def build_window_sink_block_layout(
             block_indices.update(range(recent_start_block, recent_end_block + 1))
 
         filtered = sorted(block_idx for block_idx in block_indices if 0 <= block_idx < num_kv_blocks)
+        full_blocks: list[int] = []
+        for block_idx in filtered:
+            block_token_start = block_idx * kv_block_size
+            block_token_end = min(key_length, block_token_start + kv_block_size) - 1
+            if block_token_end < 0:
+                continue
+            is_full_sink_block = block_token_end < sink_tokens
+            is_full_recent_block = block_token_start >= recent_start and block_token_end <= q_start
+            if is_full_sink_block or is_full_recent_block:
+                full_blocks.append(block_idx)
         row_blocks.append(filtered)
+        full_row_blocks.append(full_blocks)
         max_blocks_per_row = max(max_blocks_per_row, len(filtered))
+        max_full_blocks_per_row = max(max_full_blocks_per_row, len(full_blocks))
 
     kv_num_blocks = torch.zeros((batch_size, 1, num_q_blocks), dtype=torch.int32, device=device)
     kv_indices = torch.zeros((batch_size, 1, num_q_blocks, max_blocks_per_row), dtype=torch.int32, device=device)
+    full_kv_num_blocks = torch.zeros((batch_size, 1, num_q_blocks), dtype=torch.int32, device=device)
+    full_kv_indices = torch.zeros((batch_size, 1, num_q_blocks, max_full_blocks_per_row), dtype=torch.int32, device=device)
 
-    for row_idx, blocks in enumerate(row_blocks):
+    for row_idx, (blocks, full_blocks) in enumerate(zip(row_blocks, full_row_blocks)):
         kv_num_blocks[:, 0, row_idx] = len(blocks)
         if blocks:
             kv_indices[:, 0, row_idx, : len(blocks)] = torch.tensor(blocks, dtype=torch.int32, device=device)
+        full_kv_num_blocks[:, 0, row_idx] = len(full_blocks)
+        if full_blocks:
+            full_kv_indices[:, 0, row_idx, : len(full_blocks)] = torch.tensor(full_blocks, dtype=torch.int32, device=device)
 
     prototype_started_at = time.perf_counter()
     mask_mod = make_recent_sink_mask_mod(window_size=window_size, sink_tokens=sink_tokens)
     layout_prototype = BlockMask.from_kv_blocks(
         kv_num_blocks=kv_num_blocks,
         kv_indices=kv_indices,
+        full_kv_num_blocks=full_kv_num_blocks,
+        full_kv_indices=full_kv_indices,
         BLOCK_SIZE=(q_block_size, kv_block_size),
         mask_mod=mask_mod,
         seq_lengths=(
@@ -142,10 +166,16 @@ def build_window_sink_block_layout(
         ),
     )
     _WINDOW_SINK_BLOCK_PROTOTYPE_BUILD_SECONDS += time.perf_counter() - prototype_started_at
-    _WINDOW_SINK_BLOCK_LAYOUT_CACHE[layout_key] = (layout_prototype, kv_num_blocks, kv_indices)
+    _WINDOW_SINK_BLOCK_LAYOUT_CACHE[layout_key] = (
+        layout_prototype,
+        kv_num_blocks,
+        kv_indices,
+        full_kv_num_blocks,
+        full_kv_indices,
+    )
     _WINDOW_SINK_BLOCK_LAYOUT_CACHE_MISSES += 1
     _WINDOW_SINK_BLOCK_LAYOUT_BUILD_SECONDS += time.perf_counter() - build_started_at
-    return layout_prototype, kv_num_blocks, kv_indices
+    return layout_prototype, kv_num_blocks, kv_indices, full_kv_num_blocks, full_kv_indices
 
 
 def build_window_sink_block_mask(
@@ -197,7 +227,7 @@ def build_window_sink_block_mask(
         _WINDOW_SINK_BLOCK_MASK_CACHE_HITS += 1
         return cached
 
-    layout_prototype, kv_num_blocks, kv_indices = build_window_sink_block_layout(
+    layout_prototype, kv_num_blocks, kv_indices, full_kv_num_blocks, full_kv_indices = build_window_sink_block_layout(
         batch_size=int(batch_size),
         query_length=int(query_length),
         key_length=int(key_length),
@@ -212,8 +242,8 @@ def build_window_sink_block_mask(
         seq_lengths=(int(query_length), int(key_length)),
         kv_num_blocks=kv_num_blocks,
         kv_indices=kv_indices,
-        full_kv_num_blocks=layout_prototype.full_kv_num_blocks,
-        full_kv_indices=layout_prototype.full_kv_indices,
+        full_kv_num_blocks=full_kv_num_blocks,
+        full_kv_indices=full_kv_indices,
         q_num_blocks=layout_prototype.q_num_blocks,
         q_indices=layout_prototype.q_indices,
         full_q_num_blocks=layout_prototype.full_q_num_blocks,

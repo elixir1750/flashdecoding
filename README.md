@@ -69,6 +69,7 @@ Current default for `flex_attention_window_sink`:
 
 - `flex_window_size = 128`
 - `flex_sink_tokens = 4`
+- `flex_block_size = 64`
 
 `dtype=auto` currently uses a small stability heuristic:
 
@@ -115,6 +116,35 @@ Important:
 - `flex_attention` is exposed as a separate experimental backend and is intentionally not wrapped as `flash_decode`.
 - `flex_attention_window_sink` is the first optimization path in this repo's new FlexAttention/FlexDecoding-style research direction.
 - For `flex_attention`-based backends, support is reported in three layers: `upstream_support`, `integration_support`, and `local_runtime_support`.
+
+## Current implementation
+
+The repository currently implements the following `flex_attention_window_sink` path:
+
+- model loading still goes through Hugging Face Transformers with `attn_implementation="flex_attention"`
+- the experiment is attached in [src/flashdecoding/model_loader.py](./src/flashdecoding/model_loader.py) by patching GPT-NeoX causal-mask creation
+- the active phase policy is `prefill_dense_decode_sparse`
+- prefill (`query_length > 1`) stays dense
+- decode (`query_length == 1`) enables the sparse window-sink path
+- the sparse path now prefers a direct `BlockMask.from_kv_blocks(...)` construction route
+- the decode path uses asymmetric blocks: `Q_BLOCK_SIZE=1`, `KV_BLOCK_SIZE=flex_block_size`
+- recent-window and sink-token sparsity is expressed in [src/flashdecoding/flex_masks.py](./src/flashdecoding/flex_masks.py)
+- KV block layouts are cached and reused across layers
+- exact `BlockMask` objects are also cached per decode shape
+- full KV blocks are explicitly marked so FlexAttention can skip `mask_mod` work on fully visible blocks
+- the output metadata reports:
+  - `flex_phase_policy`
+  - `flex_mask_representation`
+  - `flex_block_mask_path`
+  - `flex_block_mask_cache_stats`
+  - `flex_block_mask_perf_stats`
+
+What is still intentionally not implemented:
+
+- no true Flash-Decoding kernel
+- no paged KV cache
+- no training or weight changes
+- no claim that `flex_attention_window_sink` is already faster than `sdpa` on every GPU
 
 The support layers mean:
 

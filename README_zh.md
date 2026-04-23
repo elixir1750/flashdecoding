@@ -69,6 +69,7 @@ python3 scripts/generate.py \
 
 - `flex_window_size = 128`
 - `flex_sink_tokens = 4`
+- `flex_block_size = 64`
 
 当前 `dtype=auto` 还有一个很小的稳定性策略：
 
@@ -111,6 +112,35 @@ python3 benchmarks/benchmark_decode.py \
 - `flex_attention` 是单独暴露的实验 backend，不会被包装成 `flash_decode`。
 - `flex_attention_window_sink` 是当前仓库里第一条真正进入实现阶段的 FlexAttention/FlexDecoding 风格优化实验路径。
 - 对 `flex_attention` 系后端，项目会分三层报告支持状态：`upstream_support`、`integration_support`、`local_runtime_support`。
+
+## 当前实现到哪一步了
+
+当前仓库里的 `flex_attention_window_sink` 已经实现到下面这一步：
+
+- 模型加载仍然走 Hugging Face Transformers 的 `attn_implementation="flex_attention"`
+- 实验入口在 [src/flashdecoding/model_loader.py](./src/flashdecoding/model_loader.py)，通过 patch GPT-NeoX 的 causal mask 创建路径接入
+- 当前阶段策略是 `prefill_dense_decode_sparse`
+- prefill（`query_length > 1`）保持 dense，不强行套稀疏 mask
+- decode（`query_length == 1`）才启用 sparse 的 window-sink 路线
+- 稀疏路径优先使用直接的 `BlockMask.from_kv_blocks(...)` 构造
+- decode 路径当前采用非对称块：`Q_BLOCK_SIZE=1`，`KV_BLOCK_SIZE=flex_block_size`
+- recent-window + sink-token 的稀疏规则实现在 [src/flashdecoding/flex_masks.py](./src/flashdecoding/flex_masks.py)
+- KV block layout 会跨层复用缓存
+- 精确 shape 的 `BlockMask` 也会单独缓存
+- 对“整块完全可见”的 KV blocks，会显式标记成 full blocks，减少不必要的 `mask_mod` 开销
+- 当前输出 metadata 里会带出：
+  - `flex_phase_policy`
+  - `flex_mask_representation`
+  - `flex_block_mask_path`
+  - `flex_block_mask_cache_stats`
+  - `flex_block_mask_perf_stats`
+
+当前仍然没有做的事情：
+
+- 没有 true Flash-Decoding kernel
+- 没有 paged KV cache
+- 没有训练代码，也没有改模型权重
+- 不宣称 `flex_attention_window_sink` 已经在所有 GPU 上都比 `sdpa` 更快
 
 三层 support 的含义是：
 
