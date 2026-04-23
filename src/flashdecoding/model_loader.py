@@ -8,7 +8,7 @@ from transformers import AutoModelForCausalLM, AutoTokenizer
 from transformers.models.gpt_neox import modeling_gpt_neox
 
 from .backends import BackendNotAvailableError, BackendResolution, update_support_with_runtime_result, resolve_backend
-from .flex_masks import build_window_sink_block_mask
+from .flex_masks import build_window_sink_block_mask, get_window_sink_block_mask_cache_stats
 
 
 _DTYPE_MAP = {
@@ -160,6 +160,7 @@ def get_flex_experiment_metadata(model: Any) -> dict[str, Any]:
         "flex_mask_fallback_reason": getattr(model.config, "_flex_mask_fallback_reason", None),
         "flex_window_size": getattr(model.config, "_flex_window_size", None),
         "flex_sink_tokens": getattr(model.config, "_flex_sink_tokens", None),
+        "flex_block_mask_cache_stats": get_window_sink_block_mask_cache_stats(),
     }
 
 
@@ -222,7 +223,7 @@ def load_model_and_tokenizer(
     requested_device: str,
     requested_dtype: str,
     local_files_only: bool = False,
-    flex_window_size: int = 256,
+    flex_window_size: int = 128,
     flex_sink_tokens: int = 4,
 ) -> tuple[Any, Any, torch.device, torch.dtype, BackendResolution]:
     """Load tokenizer and model for backend-aware single-example decoding."""

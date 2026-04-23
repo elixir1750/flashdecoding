@@ -42,7 +42,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--device", type=str, default="cuda", choices=["auto", "cpu", "cuda"])
     parser.add_argument("--dtype", type=str, default="auto", choices=["auto", "float32", "float16", "bfloat16"])
     parser.add_argument("--max-new-tokens", type=int, default=64)
-    parser.add_argument("--flex-window-size", type=int, default=256)
+    parser.add_argument("--flex-window-size", type=int, default=128)
     parser.add_argument("--flex-sink-tokens", type=int, default=4)
     parser.add_argument("--warmup", type=int, default=0)
     parser.add_argument("--repeat", type=int, default=3)

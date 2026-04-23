@@ -13,6 +13,19 @@ except ImportError:  # pragma: no cover - depends on torch build
     create_block_mask = None
 
 
+_WINDOW_SINK_BLOCK_MASK_CACHE: dict[tuple[object, int, int, int, int, int], "BlockMask"] = {}
+_WINDOW_SINK_BLOCK_MASK_CACHE_HITS = 0
+_WINDOW_SINK_BLOCK_MASK_CACHE_MISSES = 0
+
+
+def _device_cache_key(device: torch.device) -> object:
+    """Build a stable cache key for a device."""
+
+    if device.index is None:
+        return device.type
+    return (device.type, device.index)
+
+
 def make_recent_sink_mask_mod(window_size: int, sink_tokens: int) -> Callable:
     """Build a recent-window plus sink-token mask_mod compatible with create_block_mask."""
 
@@ -36,13 +49,28 @@ def build_window_sink_block_mask(
 ) -> "BlockMask":
     """Build a BlockMask for recent-window plus sink-token attention."""
 
+    global _WINDOW_SINK_BLOCK_MASK_CACHE_HITS, _WINDOW_SINK_BLOCK_MASK_CACHE_MISSES
+
     if create_block_mask is None or BlockMask is None:
         raise RuntimeError("torch.nn.attention.flex_attention.create_block_mask is unavailable in the current PyTorch build.")
     if query_length < 1 or key_length < 1:
         raise ValueError("BlockMask construction requires query_length >= 1 and key_length >= 1.")
 
+    cache_key = (
+        _device_cache_key(device),
+        int(batch_size),
+        int(query_length),
+        int(key_length),
+        int(window_size),
+        int(sink_tokens),
+    )
+    cached = _WINDOW_SINK_BLOCK_MASK_CACHE.get(cache_key)
+    if cached is not None:
+        _WINDOW_SINK_BLOCK_MASK_CACHE_HITS += 1
+        return cached
+
     mask_mod = make_recent_sink_mask_mod(window_size=window_size, sink_tokens=sink_tokens)
-    return create_block_mask(
+    block_mask = create_block_mask(
         mask_mod=mask_mod,
         B=batch_size,
         H=None,
@@ -51,3 +79,16 @@ def build_window_sink_block_mask(
         device=device,
         _compile=False,
     )
+    _WINDOW_SINK_BLOCK_MASK_CACHE[cache_key] = block_mask
+    _WINDOW_SINK_BLOCK_MASK_CACHE_MISSES += 1
+    return block_mask
+
+
+def get_window_sink_block_mask_cache_stats() -> dict[str, int]:
+    """Return cache statistics for window-sink BlockMask construction."""
+
+    return {
+        "entries": len(_WINDOW_SINK_BLOCK_MASK_CACHE),
+        "hits": _WINDOW_SINK_BLOCK_MASK_CACHE_HITS,
+        "misses": _WINDOW_SINK_BLOCK_MASK_CACHE_MISSES,
+    }

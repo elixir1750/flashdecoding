@@ -6,7 +6,7 @@ param(
     [int]$MaxNewTokens = 64,
     [int]$Repeat = 5,
     [int]$Warmup = 1,
-    [int]$FlexWindowSize = 256,
+    [int]$FlexWindowSize = 128,
     [int]$FlexSinkTokens = 4,
     [switch]$RunCompareDemo
 )

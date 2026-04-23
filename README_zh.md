@@ -65,6 +65,11 @@ python3 scripts/generate.py \
 - `--flex-sink-tokens`
 - `--seed`
 
+当前 `flex_attention_window_sink` 的默认参数是：
+
+- `flex_window_size = 128`
+- `flex_sink_tokens = 4`
+
 当前 `dtype=auto` 还有一个很小的稳定性策略：
 
 - CUDA 上的 `vanilla` 会解析成 `float32`

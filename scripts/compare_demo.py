@@ -49,7 +49,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--device", type=str, default="auto", choices=["auto", "cpu", "cuda"])
     parser.add_argument("--dtype", type=str, default="auto", choices=["auto", "float32", "float16", "bfloat16"])
     parser.add_argument("--max-new-tokens", type=int, default=64)
-    parser.add_argument("--flex-window-size", type=int, default=256, help="Recent-window size for flex_attention_window_sink.")
+    parser.add_argument("--flex-window-size", type=int, default=128, help="Recent-window size for flex_attention_window_sink.")
     parser.add_argument("--flex-sink-tokens", type=int, default=4, help="Number of sink/prefix tokens always visible in flex_attention_window_sink.")
     parser.add_argument("--seed", type=int, default=None)
     parser.add_argument("--local-files-only", action="store_true", help="Only load local Hugging Face cache files.")

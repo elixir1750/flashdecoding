@@ -65,6 +65,11 @@ Useful options:
 - `--flex-sink-tokens`
 - `--seed`
 
+Current default for `flex_attention_window_sink`:
+
+- `flex_window_size = 128`
+- `flex_sink_tokens = 4`
+
 `dtype=auto` currently uses a small stability heuristic:
 
 - `vanilla` on CUDA resolves to `float32`
