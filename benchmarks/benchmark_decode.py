@@ -18,7 +18,7 @@ if str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
 
 from flashdecoding.generation import generate_once
-from flashdecoding.model_loader import load_model_and_tokenizer
+from flashdecoding.model_loader import get_flex_experiment_metadata, load_model_and_tokenizer
 
 
 def parse_args() -> argparse.Namespace:
@@ -161,6 +161,7 @@ def main() -> int:
         return 1
 
     print(f"Loaded model on {device} with dtype {dtype}. Starting benchmark...", flush=True)
+    flex_metadata = get_flex_experiment_metadata(model)
     for _ in range(args.warmup):
         generate_once(
             model=model,
@@ -193,6 +194,7 @@ def main() -> int:
         "requested_backend": args.backend,
         "backend_notes": backend.notes,
         "backend_support_report": backend.support_report.to_dict() if backend.support_report is not None else None,
+        "flex_experiment_metadata": flex_metadata,
         "device": str(device),
         "dtype": str(dtype),
         "device_request": args.device,

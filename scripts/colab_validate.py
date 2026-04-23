@@ -20,7 +20,7 @@ if str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
 
 from flashdecoding.generation import generate_once
-from flashdecoding.model_loader import load_model_and_tokenizer
+from flashdecoding.model_loader import get_flex_experiment_metadata, load_model_and_tokenizer
 
 
 def parse_args() -> argparse.Namespace:
@@ -182,6 +182,7 @@ def run_backend_validation(args: argparse.Namespace, prompt: str, backend_name: 
         "backend": backend.name,
         "backend_notes": backend.notes,
         "backend_support_report": backend.support_report.to_dict() if backend.support_report is not None else None,
+        "flex_experiment_metadata": get_flex_experiment_metadata(model),
         "device": str(device),
         "dtype": str(dtype),
     }
@@ -223,6 +224,7 @@ def main() -> int:
         summary = {
             "backend": result["metadata"]["requested_backend"],
             "status": result["status"],
+            "flex_experiment_metadata": result["metadata"].get("flex_experiment_metadata"),
             "summary": result["summary"],
             "error": result["error"],
         }

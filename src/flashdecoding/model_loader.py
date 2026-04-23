@@ -151,6 +151,18 @@ def configure_flex_attention_experiment(model: Any, backend_name: str, flex_wind
     model.config._flex_mask_fallback_reason = None
 
 
+def get_flex_experiment_metadata(model: Any) -> dict[str, Any]:
+    """Return debug metadata for the current FlexAttention experiment state on the model."""
+
+    return {
+        "flex_attention_experiment": getattr(model.config, "_flex_attention_experiment", None),
+        "flex_mask_representation": getattr(model.config, "_flex_mask_representation", None),
+        "flex_mask_fallback_reason": getattr(model.config, "_flex_mask_fallback_reason", None),
+        "flex_window_size": getattr(model.config, "_flex_window_size", None),
+        "flex_sink_tokens": getattr(model.config, "_flex_sink_tokens", None),
+    }
+
+
 @torch.inference_mode()
 def run_backend_smoke_test(
     model: Any,
